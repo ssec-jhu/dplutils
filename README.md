@@ -1,9 +1,9 @@
 # SSEC-JHU dplutils
 
-[![CI Status](https://github.com/ssec-jhu/dplutils/workflows/CI/badge.svg?branch=main)](https://github.com/ssec-jhu/dplutils/actions)
+[![CI Status](https://github.com/ssec-jhu/dplutils/actions/workflows/ci.yml/badge.svg)](https://github.com/ssec-jhu/dplutils/actions)
 [![Documentation Status](https://readthedocs.org/projects/ssec-jhu-dplutils/badge/?version=latest)](https://ssec-jhu-dplutils.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/ssec-jhu/dplutils/branch/main/graph/badge.svg?token=0KPNKHRC2V)](https://codecov.io/gh/ssec-jhu/dplutils)
-[![Security Status](https://github.com/ssec-jhu/dplutils/workflows/Security/badge.svg?branch=main)](https://github.com/ssec-jhu/dplutils/actions)
+[![Security Status](https://github.com/ssec-jhu/dplutils/actions/workflows/security.yml/badge.svg)](https://github.com/ssec-jhu/dplutils/actions)
 <!---[![DOI](https://zenodo.org/badge/<insert_ID_number>.svg)](https://zenodo.org/badge/latestdoi/<insert_ID_number>) --->
 
 
