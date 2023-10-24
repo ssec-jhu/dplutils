@@ -1,0 +1,83 @@
+[project]
+name = "dplutils"
+dynamic = ["version"]
+authors = [
+    {name = "Scientifc Software Engineering Center at JHU", email = "ssec@jhu.edu"},
+]
+description = ""
+readme = "README.md"
+license = {file = "LICENSE"}
+
+requires-python = ">=3.10"  # colabfold utilities expect this (for now)
+dependencies = [
+    "pandas",
+    "numpy",
+    "ray[default]",
+    "pyarrow",
+]
+
+[project.optional-dependencies]
+dev = [
+    "bandit>=1.7",
+    "build",
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "tox"
+]
+docs = [
+    "sphinx",
+    "sphinx_rtd_theme",
+    "sphinx_book_theme",
+    "sphinx-automodapi",
+    "sphinx-issues",
+    "nbsphinx"
+]
+
+[project.urls]
+homepage = "https://github.com/ssec-jhu/base-template"
+documentation = "https://github.com/ssec-jhu/base-template"
+repository = "https://github.com/ssec-jhu/base-template"
+
+[build-system]
+requires = ["setuptools>=61.2", "setuptools_scm[toml]>=7"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["dplutils"]
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools_scm]
+write_to = "dplutils/_version.py"
+
+[tool.ruff]
+line-length = 120
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "docs",
+    "node_modules",
+    "venv",
+]
+
+ignore = [
+]
+
+target-version = "py311"

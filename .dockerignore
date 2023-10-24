@@ -1,0 +1,8 @@
+*
+!/dplutils
+!requirements
+!pyproject.toml
+!setup.py
+!LICENSE
+!/docker/*.sh
+!/.git/

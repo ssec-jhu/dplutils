@@ -1,0 +1,6 @@
+[run]
+source_pkgs=dplutils
+omit =
+    **/_*.py
+    setup.py
+    */tests/*
