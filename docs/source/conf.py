@@ -45,6 +45,7 @@ html_theme_options = {
     },
     'repository_url': 'https://github.com/ssec-jhu/dplutils',
     'use_repository_button': True,
+    'navigation_with_keys': False,
  }
 
 # -- Options for EPUB output
