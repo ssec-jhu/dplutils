@@ -1,13 +1,7 @@
 name: DIST
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - '*'
-  pull_request:
-    branches:
-      - '*'
+  release:
+    types: [ released, prereleased ]
 
 jobs:
   build:
