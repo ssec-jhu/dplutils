@@ -35,9 +35,9 @@ docs = [
 ]
 
 [project.urls]
-homepage = "https://github.com/ssec-jhu/base-template"
-documentation = "https://github.com/ssec-jhu/base-template"
-repository = "https://github.com/ssec-jhu/base-template"
+homepage = "https://dplutils.readthedocs.io/en/latest"
+documentation = "https://dplutils.readthedocs.io/en/latest"
+repository = "https://github.com/ssec-jhu/dplutils"
 
 [build-system]
 requires = ["setuptools>=61.2", "setuptools_scm[toml]>=7"]
