@@ -2,7 +2,7 @@ import ray
 import pandas as pd
 import pytest
 from dplutils.pipeline import  PipelineTask
-from dplutils.pipeline.ray import RayDataPipelineExecutor, get_remote_wrapper
+from dplutils.pipeline.ray import RayDataPipelineExecutor, get_remote_wrapper, set_run_id
 from dplutils import observer
 from dplutils.observer.ray import RayActorWrappedObserver, RayMetricsObserver
 
@@ -112,3 +112,22 @@ def test_remote_wrapper_sets_name_based_on_task_info():
     def funcname(): pass
     wrapper = get_remote_wrapper(PipelineTask('taskname', funcname), None)
     assert wrapper.__name__ == 'taskname<funcname>'
+
+
+@pytest.mark.parametrize('batch_size', [None, 1, 10])
+def test_remote_wrapper_wrapped_func(raysession, batch_size):
+    def func(arg):
+        return arg
+    wrapper = get_remote_wrapper(PipelineTask('taskname', func, batch_size=batch_size), None)
+    df_in = pd.DataFrame({'col': range(20)})
+    res = wrapper(df_in)
+    assert len(res) == 20
+    assert set(res.columns) == set(df_in.columns)
+    assert res.compare(df_in).empty
+
+def test_pipeline_bootstrap_set_run_id():
+    # the function is specific to ray.data.range behaviour, and expects dataframe with id column
+    df_in = pd.DataFrame({'id': [1]})
+    df_out = set_run_id(df_in, 'runid')
+    assert df_out.batch_id.iloc[0] == 1
+    assert df_out.run_id.iloc[0] == 'runid'
