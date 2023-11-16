@@ -55,3 +55,10 @@ def test_pipeline_executor_output_writer(dummy_executor, tmp_path):
     # these test the expected data inside each batch, hence len fixed at 10
     assert len(data) == 10
     assert len(data.id) == 10
+
+
+def test_pipeline_executor_from_graph(dummy_executor, dummy_steps):
+    executor_class = dummy_executor.__class__
+    obj = executor_class.from_graph(dummy_steps)
+    assert isinstance(obj, executor_class)
+    assert obj.tasks == dummy_steps
