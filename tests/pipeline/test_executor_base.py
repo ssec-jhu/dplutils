@@ -41,6 +41,11 @@ def test_pipeline_executor_set_config_from_file(dummy_executor, tmp_path):
     assert dummy_executor.tasks_idx['task1'].kwargs == {'test': 1}
 
 
+def test_pipeline_config_raises_when_no_kwargs(dummy_executor):
+    with pytest.raises(ValueError):
+        dummy_executor.set_config()
+
+
 def test_pipeline_executor_set_context(dummy_executor):
     ret = dummy_executor.set_context('newcontext', 'somevalue')
     assert ret == dummy_executor
@@ -62,3 +67,14 @@ def test_pipeline_executor_from_graph(dummy_executor, dummy_steps):
     obj = executor_class.from_graph(dummy_steps)
     assert isinstance(obj, executor_class)
     assert obj.tasks == dummy_steps
+
+
+def test_validate_records_and_raises_errors(dummy_executor):
+    def func_with_args(x, y):
+        pass
+
+    # patch one of the executor tasks with func with required arg
+    dummy_executor.tasks_idx['task1'].func = func_with_args
+
+    with pytest.raises(ValueError, match='Errors in validation'):
+        dummy_executor.validate()
