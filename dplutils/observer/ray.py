@@ -25,7 +25,7 @@ class RayActorWrappedObserver(Observer):
         self.actor.increment.remote(name, value=1, **kwargs)
 
     def param(self, name, value, **kwargs):
-        self.actor.param.remote(name, **kwargs)
+        self.actor.param.remote(name, value, **kwargs)
 
 
 class RayMetricsObserver(Observer):
