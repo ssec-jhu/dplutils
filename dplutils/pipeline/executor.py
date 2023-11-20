@@ -105,7 +105,7 @@ class PipelineExecutor(ABC):
         return self._run_id
 
     @abstractmethod
-    def execute(self) -> Iterable[pd.DataFrame]:  # pragma: no cover
+    def execute(self) -> Iterable[pd.DataFrame]:
         """Execute the task graph in batches.
 
         This method must be overridden by implementations. It should arrange for
