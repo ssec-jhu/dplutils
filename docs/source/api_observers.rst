@@ -26,3 +26,21 @@ Ray implementations
 
    RayActorWrappedObserver
    RayMetricsObserver
+
+Aim implementations
+-------------------
+
+.. currentmodule:: dplutils.observer.aim
+.. autosummary::
+   :toctree: generated
+
+   AimObserver
+
+Mlflow implementations
+----------------------
+
+.. currentmodule:: dplutils.observer.mlflow
+.. autosummary::
+   :toctree: generated
+
+   MlflowObserver
