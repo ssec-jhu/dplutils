@@ -1,6 +1,7 @@
 import pytest
 from aim import Run
 from dplutils import observer
+import dplutils.observer.aim
 from dplutils.observer.aim import AimObserver
 
 
@@ -44,3 +45,9 @@ def test_increment_counter(aimobserver):
     assert get_metric_last_value(aimobserver.run, 'testcounter') == 1
     observer.increment('testcounter')
     assert get_metric_last_value(aimobserver.run, 'testcounter') == 2
+
+
+def test_instantiation_excepts_when_no_package(monkeypatch):
+    monkeypatch.setattr(dplutils.observer.aim, 'Run', None)
+    with pytest.raises(ImportError):
+        AimObserver()

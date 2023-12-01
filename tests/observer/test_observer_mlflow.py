@@ -1,6 +1,7 @@
 import pytest
 import mlflow
 from dplutils import observer
+import dplutils.observer.mlflow
 from dplutils.observer.mlflow import MlflowObserver
 
 
@@ -53,3 +54,9 @@ def test_increment_counter(mlflowobserver, mlflowclient):
     assert mlflowclient.get_run(mlflowobserver.run_id).data.metrics['testcounter'] == 1
     observer.increment('testcounter')
     assert mlflowclient.get_run(mlflowobserver.run_id).data.metrics['testcounter'] == 2
+
+
+def test_instantiation_excepts_when_no_package(monkeypatch):
+    monkeypatch.setattr(dplutils.observer.mlflow, 'mlflow', None)
+    with pytest.raises(ImportError):
+        MlflowObserver()

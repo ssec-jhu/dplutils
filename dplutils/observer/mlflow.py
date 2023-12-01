@@ -25,13 +25,15 @@ class MlflowObserver(Observer):
             ``mlflow.MlflowClient.create_run``.
     """
     def __init__(self, run=None, experiment=None, tracking_uri=None, **mlflow_kwargs):
+        if mlflow is None:
+            raise ImportError("mlflow must be installed to create observer run!")
+
         tracking_uri = tracking_uri or mlflow.get_tracking_uri()
         self.mlflow_client = mlflow.MlflowClient(tracking_uri = tracking_uri)
 
         if run is not None:
             self.run = run
         else:
-            assert mlflow is not None, "mlflow must be installed to create observer run!"
             expid = None
             if experiment is not None:
                 exp = self.mlflow_client.get_experiment_by_name(experiment)

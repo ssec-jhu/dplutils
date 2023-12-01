@@ -26,7 +26,8 @@ class AimObserver(Observer):
         if run is not None:
             self.run = run
         else:
-            assert Run is not None, "aim must be installed to create observer run!"
+            if Run is None:
+                raise ImportError("aim must be installed to create observer run!")
             self.run = Run(**aim_kwargs)
         self._countercache = {}
 
