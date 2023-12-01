@@ -7,3 +7,4 @@ omit =
 [report]
 exclude_lines =
     @abstractmethod
+    except ImportError:
