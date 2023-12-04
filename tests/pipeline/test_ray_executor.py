@@ -1,6 +1,7 @@
 import ray
 import pandas as pd
 import pytest
+import time
 from dplutils.pipeline import  PipelineTask
 from dplutils.pipeline.ray import RayDataPipelineExecutor, get_remote_wrapper, set_run_id
 from dplutils import observer
@@ -23,14 +24,24 @@ def observer_pipeline():
 
 
 @pytest.mark.parametrize('task_batch_size', [None, 1])
-def test_ray_actor_wrapped_observer(observer_pipeline, raysession, task_batch_size):
+def test_ray_actor_wrapped_observer(observer_pipeline, raysession, task_batch_size, tmp_path):
     observer.set_observer(RayActorWrappedObserver(observer.InMemoryObserver))
     data = ray.get(observer.get_observer().actor.dump.remote())['metrics']
     assert 'gauge' not in data
     assert 'counter' not in data
     for batch in observer_pipeline.set_config('task.batch_size', task_batch_size).run():
         pass
-    data = ray.get(observer.get_observer().actor.dump.remote())['metrics']
+    # attempt to flush the actor task queue by waiting on calls to remote
+    # function, and adding retry logic. The actor is running remotely and has
+    # queues to process the requests (which we also do not wait for in the
+    # observer tasks), so this loop with small sleep gives a reasonable chance
+    # to flush pending requests in various testing scenarios.
+    for _ in range(3):
+        ray.get(observer.get_observer().actor.observe.remote('_', 1))
+        data = ray.get(observer.get_observer().actor.dump.remote())['metrics']
+        if len(data['gauge']) != observer_pipeline.n_batches:
+            break
+        time.sleep(0.1)
     assert 'gauge' in data
     assert 'counter' in data
     assert 'timer' in data
