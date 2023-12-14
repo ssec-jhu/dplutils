@@ -17,15 +17,20 @@ class RayActorWrappedObserver(Observer):
     """
     def __init__(self, cls, *args, **kwargs):
         self.actor = ray.remote(cls).remote(*args, **kwargs)
+        self._wait = False  # for testing purposes. If true wait instead of fire-and-forget
+
+    def _wrap_waiter(self, remote):
+        if self._wait:
+            ray.get(remote)
 
     def observe(self, name, value, **kwargs):
-        self.actor.observe.remote(name, value, **kwargs)
+        self._wrap_waiter(self.actor.observe.remote(name, value, **kwargs))
 
     def increment(self, name, value=1, **kwargs):
-        self.actor.increment.remote(name, value=1, **kwargs)
+        self._wrap_waiter(self.actor.increment.remote(name, value=1, **kwargs))
 
     def param(self, name, value, **kwargs):
-        self.actor.param.remote(name, value, **kwargs)
+        self._wrap_waiter(self.actor.param.remote(name, value, **kwargs))
 
 
 class RayMetricsObserver(Observer):

@@ -23,8 +23,10 @@ def observer_pipeline():
 
 
 @pytest.mark.parametrize('task_batch_size', [None, 1])
-def test_ray_actor_wrapped_observer(observer_pipeline, raysession, task_batch_size):
-    observer.set_observer(RayActorWrappedObserver(observer.InMemoryObserver))
+def test_ray_actor_wrapped_observer(observer_pipeline, raysession, task_batch_size, tmp_path):
+    obs = RayActorWrappedObserver(observer.InMemoryObserver)
+    obs._wait = True
+    observer.set_observer(obs)
     data = ray.get(observer.get_observer().actor.dump.remote())['metrics']
     assert 'gauge' not in data
     assert 'counter' not in data

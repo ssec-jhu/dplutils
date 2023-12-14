@@ -5,8 +5,10 @@ from dplutils import observer
 from dplutils.observer.ray import RayActorWrappedObserver, RayMetricsObserver
 
 
-def test_ray_actor_wrapped_observer(raysession):
+@pytest.mark.parametrize('set_wait', [True, False])
+def test_ray_actor_wrapped_observer(raysession, set_wait):
     obs = RayActorWrappedObserver(observer.InMemoryObserver)
+    obs._wait = set_wait
     obs.observe('metric', 99.0)
     obs.increment('counter')
     obs.param('parm', 'value')
