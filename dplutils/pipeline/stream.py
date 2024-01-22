@@ -81,7 +81,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                         next_task.data_in.appendleft(block_info)
 
             for ready in deque_extract(task.split_pending, self.task_ready):
-                task.data_in.extend(self.task_resolve_output(ready))
+                task.data_in.extendleft(self.task_resolve_output(ready))
         return None
 
     def process_source(self, source):
@@ -92,7 +92,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             if self.n_sourced == self.max_batches:
                 self.source_exhausted = True
                 break
-        source.pending.append(self.task_submit(source.task, source_batch))
+        source.pending.appendleft(self.task_submit(source.task, source_batch))
         source.counter += 1
 
     def enqueue_tasks(self):
@@ -109,8 +109,9 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             batch_size = task.task.batch_size
             if batch_size is not None:
                 for batch in deque_extract(task.data_in, lambda b: b.length > batch_size):
-                    task.split_pending.append(self.split_batch_submit(batch, batch_size))
+                    task.split_pending.appendleft(self.split_batch_submit(batch, batch_size))
 
+            eligible = False
             while len(task.data_in) > 0:
                 num_to_merge = deque_num_merge(task.data_in, batch_size)
                 if num_to_merge == 0:
@@ -120,12 +121,15 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                         num_to_merge = len(task.data_in)
                     else:
                         break
-                rank += 1  # independent of whether it can be subitted -- update if ready
+                eligible = True
                 if not self.task_submittable(task.task, rank):
                     break
                 merged = [task.data_in.pop().data for i in range(num_to_merge)]
-                task.pending.append(self.task_submit(task.task, merged))
+                task.pending.appendleft(self.task_submit(task.task, merged))
                 task.counter += 1
+
+            if eligible:  # update rank of this task if it _could_ be done, whether or not it was
+                rank += 1
 
         # in least-run order try to enqueue as many of the source tasks as can fit
         while True:
