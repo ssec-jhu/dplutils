@@ -62,17 +62,19 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         return [p for tn in self.stream_graph for p in tn.pending]
 
     def task_exhausted(self, task=None):
-        n = 0 if task is None else len(task.split_pending)
+        if task is not None and len(task.split_pending) > 0:
+            return False
         for upstream in self.stream_graph.walk_back(task):
-            n += upstream.total_pending()
-        return n == 0
+            if upstream.total_pending() > 0:
+                return False
+        return True
 
     def resolve_completed(self):
         # Walk graph forward to promote completed tasks to next task
         # queue. Dataframes for completed sink tasks are returned here in order
         # to prioritize flushing.
         for task in self.stream_graph.walk_fwd():
-            for ready in deque_extract(task.pending, self.task_ready):
+            for ready in deque_extract(task.pending, self.is_task_ready):
                 block_info = self.task_resolve_output(ready)
                 if task in self.stream_graph.sink_tasks:
                     return block_info.data
@@ -80,7 +82,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                     for next_task in self.stream_graph.neighbors(task):
                         next_task.data_in.appendleft(block_info)
 
-            for ready in deque_extract(task.split_pending, self.task_ready):
+            for ready in deque_extract(task.split_pending, self.is_task_ready):
                 task.data_in.extendleft(self.task_resolve_output(ready))
         return None
 
@@ -101,9 +103,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         # to the end of the pipeline and only feed as necessary.
         rank = 0
         for task in self.stream_graph.walk_back(sort_key=lambda x: x.counter):
-            if task in self.stream_graph.source_tasks:
-                continue
-            elif len(task.data_in) == 0:
+            if task in self.stream_graph.source_tasks or len(task.data_in) == 0:
                 continue
 
             batch_size = task.task.batch_size
@@ -162,7 +162,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         pass
 
     @abstractmethod
-    def task_ready(self, pending_task: Any) -> bool:
+    def is_task_ready(self, pending_task: Any) -> bool:
         pass
 
     @abstractmethod
@@ -198,7 +198,7 @@ class LocalSerialExecutor(StreamingGraphExecutor):
     def task_submittable(self, t, rank):
         return self.sflag == 0
 
-    def task_ready(self, t):
+    def is_task_ready(self, t):
         return True
 
     def poll_tasks(self, pending):

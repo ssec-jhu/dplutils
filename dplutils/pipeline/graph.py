@@ -59,7 +59,7 @@ class PipelineGraph(DiGraph):
                 yield node
 
     def walk_fwd(self, source=None, sort_key=None):
-        return self._walk(source or TRM.source, sort_key=sort_key)
+        return self._walk(source or TRM.source, back=False, sort_key=sort_key)
 
     def walk_back(self, source=None, sort_key=None):
         return self._walk(source or TRM.sink, back=True, sort_key=sort_key)

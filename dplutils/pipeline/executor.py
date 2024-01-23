@@ -25,13 +25,16 @@ class PipelineExecutor(ABC):
             self.graph = PipelineGraph(deepcopy(graph))
         else:
             self.graph = deepcopy(graph)
-        self.tasks_idx = self.graph.task_map  # for back compat
         self.ctx = {}
         self._run_id = None
 
     @classmethod
     def from_graph(cls, graph: PipelineGraph) -> 'PipelineExecutor':
         return cls(graph)
+
+    @property
+    def tasks_idx(self):  # for back compat
+        return self.graph.task_map
 
     def set_context(self, key, value) -> 'PipelineExecutor':
         self.ctx[key] = value

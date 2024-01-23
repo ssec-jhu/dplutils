@@ -135,11 +135,12 @@ class RemoteTracker:
 
 
 class RayStreamGraphExecutor(StreamingGraphExecutor):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, ray_poll_timeout: int = 20, **kwargs):
         super().__init__(*args, **kwargs)
         # bootstrap remote tasks at initialization and keep reference - this is
         # more efficient than doing so for each remote task run due to required
         # serialization
+        self.ray_poll_timeout = ray_poll_timeout
         self.remote_task_map = {}
         for name, task in self.graph.task_map.items():
             self.remote_task_map[name] = ray.remote(
@@ -162,9 +163,9 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
 
     def task_submittable(self, task, rank):
         cluster_r = ray.cluster_resources()
+        ck_map = {'num_cpus': 'CPU', 'num_gpus': 'GPU'}
         task_r = task_resources(task)
         for k in task_r:
-            ck_map = {'num_cpus': 'CPU', 'num_gpus': 'GPU'}
             avail = cluster_r.get(ck_map.get(k, k), 0) - self.sched_resources.get(k, 0)
             # Overcommit the resources for all downstream tasks to ensure that
             # upstream tasks cant starve those that don't presently fit. Source
@@ -183,7 +184,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         refs = remote_task.remote(*df_list)
         return RemoteTracker(task, refs)
 
-    def task_ready(self, remote_task):
+    def is_task_ready(self, remote_task):
         ready, _ = ray.wait(remote_task.refs, timeout=0, fetch_local=False)
         if len(ready) == 0:
             return False
@@ -209,4 +210,4 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         # in the case where the cluster is expanded. The timescale here just
         # needs to be on the order of how long it takes to get new hardware
         # added to cluster (expected seconds/minutes timescale)
-        ray.wait(all_refs, timeout=20, fetch_local=False)
+        ray.wait(all_refs, timeout=self.ray_poll_timeout, fetch_local=False)
