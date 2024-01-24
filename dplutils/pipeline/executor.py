@@ -6,11 +6,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
-from dplutils.pipeline import PipelineTask
+from dplutils.pipeline.graph import PipelineGraph
 from dplutils.pipeline.utils import dict_from_coord
-
-
-PipelineGraph = list[PipelineTask]
 
 
 class PipelineExecutor(ABC):
@@ -24,14 +21,20 @@ class PipelineExecutor(ABC):
     tasks in the graph.
     """
     def __init__(self, graph: PipelineGraph):
-        self.tasks = [deepcopy(i) for i in graph]
-        self.tasks_idx = {i.name: i for i in self.tasks}
+        if isinstance(graph, list):
+            self.graph = PipelineGraph(deepcopy(graph))
+        else:
+            self.graph = deepcopy(graph)
         self.ctx = {}
         self._run_id = None
 
     @classmethod
     def from_graph(cls, graph: PipelineGraph) -> 'PipelineExecutor':
         return cls(graph)
+
+    @property
+    def tasks_idx(self):  # for back compat
+        return self.graph.task_map
 
     def set_context(self, key, value) -> 'PipelineExecutor':
         self.ctx[key] = value
@@ -90,7 +93,7 @@ class PipelineExecutor(ABC):
 
     def validate(self) -> None:
         excs = []
-        for task in self.tasks:
+        for task in self.tasks_idx.values():
             try:
                 task.validate(self.ctx)
             except ValueError as e:

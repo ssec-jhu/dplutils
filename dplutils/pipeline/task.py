@@ -86,3 +86,6 @@ class PipelineTask:
         extra = set(all_kwargs.keys()) - {k for k,v in params}
         if len(extra) > 0:
             raise ValueError(f'unkown arguments {extra} for task {self.name}')
+
+    def __hash__(self):
+        return hash(self.name)

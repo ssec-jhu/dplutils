@@ -15,6 +15,7 @@ def obsfunc():
         observer.param('param1', 'value1')
     return func
 
+
 @pytest.fixture
 def globalmemobs():
     obs = InMemoryObserver()

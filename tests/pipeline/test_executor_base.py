@@ -62,11 +62,11 @@ def test_pipeline_executor_output_writer(dummy_executor, tmp_path):
     assert len(data.id) == 10
 
 
-def test_pipeline_executor_from_graph(dummy_executor, dummy_steps):
+def test_pipeline_executor_from_list_graph(dummy_executor, dummy_steps):
     executor_class = dummy_executor.__class__
     obj = executor_class.from_graph(dummy_steps)
     assert isinstance(obj, executor_class)
-    assert obj.tasks == dummy_steps
+    assert obj.graph.to_list() == dummy_steps
 
 
 def test_validate_records_and_raises_errors(dummy_executor):
