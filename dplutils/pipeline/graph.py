@@ -11,7 +11,7 @@ class TRM(Enum):
 class PipelineGraph(DiGraph):
     """Graph of pipeline tasks.
 
-    This class adds convenience functionality for task pipeline handing on top
+    This class adds convenience functionality for task pipeline handling on top
     of :class:`networkx.DiGraph` on which it is based.
 
     Args:
