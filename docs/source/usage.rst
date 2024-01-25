@@ -1,9 +1,11 @@
 Usage
 =====
 
-.. _installation:
+.. toctree::
+   :maxdepth: 1
 
-Installation
-------------
-
-To use dplutils, first install it using...:
+   tasks_graphs
+   configuration
+   execution
+   command_line
+   extending

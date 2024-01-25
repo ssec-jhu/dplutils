@@ -4,7 +4,13 @@ Quick Start
 Installation
 ------------
 
-TBD
+Using pip:
+
+  pip install dplutils
+
+Using docker:
+
+  docker pull ghcr.io/ssec-jhu/dplutils:latest
 
 Define Pipeline
 ---------------

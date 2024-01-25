@@ -11,12 +11,24 @@ from dplutils.pipeline.utils import deque_extract
 
 @dataclass
 class StreamBatch:
+    """Container for task output tracking
+
+    Args:
+      length: length of dataframe that is referenced by ``data``. This field is
+        required as in many cases ``data`` will be something that eventually
+        resolves to a dataframe, but not available to driver.
+      data: data should contain a reference to a DataFrame in whatever way is
+        meaningful to implementation. This field is not introspected, only
+        passed by the framework.
+    """
     length: int
     data: Any
 
 
 @dataclass
 class StreamTask:
+    """Internal task wrapper for :class:`StreamingGraphExecutor`
+    """
     task: PipelineTask
     data_in: list[StreamBatch] = field(default_factory=deque)
     pending: list = field(default_factory=deque)
@@ -35,6 +47,25 @@ class StreamTask:
 
 
 class StreamingGraphExecutor(PipelineExecutor, ABC):
+    """Base class for implementing streaming remote graph execution
+
+    This class implements the :meth:`execute` method of
+    :class:`PipelineExecutor` and contains logic necessary to schedule tasks,
+    prioritizing completing those that are closer to terminals. It supports
+    arbitrary pipeline graphs with branches, multiple inputs and outputs. By
+    default, for each run, it generates a indefinite stream of input dataframes
+    tagged with a monotonically incrementing batch id.
+
+    Implementations must override abstract methods for (remote) task submission
+    and polling. The following must be overriden, see their docs for more:
+
+    - :meth:`is_task_ready`
+    - :meth:`poll_tasks`
+    - :meth:`split_batch_submit`
+    - :meth:`task_resolve_output`
+    - :meth:`task_submit`
+    - :meth:`task_submittable`
+    """
     def __init__(self, graph, max_batches=None):
         super().__init__(graph)
         self.max_batches = max_batches
@@ -155,31 +186,97 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
 
     @abstractmethod
     def task_submit(self, task: PipelineTask, df_list: list[pd.DataFrame]) -> Any:
+        """Run or arrange for the running of task
+
+        Implementations must override this method and arrange for the function
+        of ``task`` to be called on a dataframe made from the concatenation of
+        ``df_list``. The return value will be maintained in a pending queue, and
+        both ``task_resolve_output`` and ``is_task_ready`` will take these as
+        input, but will otherwise not be inspected. Typically the return value
+        would be a handle to the remote result or a future, or equivalent.
+
+        Note:
+            ``PipelineTask`` expects a single DataFrame as input, while this
+            function receives a batch of such. It MUST concatenate these into a
+            single DataFrame prior to execution (e.g. with
+            ``pd.concat(df_list)``). This is not done in the driver code as the
+            dataframes in ``df_list`` may not be local.
+        """
         pass
 
     @abstractmethod
     def task_resolve_output(self, pending_task: Any) -> StreamBatch:
+        """Return a :class:`StreamBatch` from completed task
+
+        This function takes the output produced by either :meth:`task_submit` or
+        :meth:`split_batch_submit`, and returns a :class:`StreamBatch` object which
+        tracks the length of returned dataframe(s) and the object which
+        references the underlying DataFrame.
+
+        The ``data`` member of returned :class:`StreamBatch` will be either:
+
+        - passed to another call of :meth:`task_submit` in a list container, or
+        - yielded in the :meth:`execute` call (which yields in the user-called
+          ``run`` method). If any handling must be done prior to yield,
+          implementation should do so in overloaded :meth:`execute`.
+        """
         pass
 
     @abstractmethod
     def is_task_ready(self, pending_task: Any) -> bool:
+        """Return true if pending task is ready
+
+        This method takes outputs from :meth:`task_submit` and
+        :meth:`split_batch_submit` and must return ``True`` if the task is complete
+        and can be passed to :meth:`task_resolve_output` or ``False`` otherwise.
+        """
         pass
 
     @abstractmethod
     def task_submittable(self, task: PipelineTask, rank: int) -> bool:
+        """Preflight check if task can be submitted
+
+        Return ``True`` if current conditions enable the ``task`` to be
+        submitted. The ``rank`` argument is an indicator of relative importance,
+        and is incremented whenever the pending data for a given tasks meets the
+        batching requirements as driver walks the task graph backward. Thus
+        ``Rank=0`` represents the task furthest along and so the highest
+        priority for submission.
+        """
         pass
 
     @abstractmethod
     def split_batch_submit(self, batch: StreamBatch, max_rows: int) -> Any:
+        """Submit a task to split batch into at most ``max_rows``
+
+        Similart to task_submit, implementations should arrange by whatever
+        means make sense to take the dataframe reference in ``batch.data`` of
+        :class:`StreamBatch`, given its length in ``batch.length`` and split
+        into a number of parts that result in no more than ``max_rows`` per
+        part. The return value should be a list of objects that can be processed
+        by :meth:`is_task_ready` and :meth:`task_resolve_output`.
+        """
         pass
 
     @abstractmethod
     def poll_tasks(self, pending_task_list: list[Any]) -> None:
+        """Wait for any change in status to ``pending_task_list``
+
+        This method will be called after submitting as many tasks as
+        possible. It gives a chance for implementations to wait in a io-friendly
+        way, for example by waiting on async futures. The input is a list of
+        objects as returned by :meth:`task_submit` or :meth:`split_batch_submit`. The
+        return value is unused.
+        """
         pass
 
 
 class LocalSerialExecutor(StreamingGraphExecutor):
-    # for testing purposes
+    """Implementation for reference and testing purposes
+
+    This reference implementation demonstrates expected outputs for abstract
+    methods, feeding a single batch at a time source to sink in the main thread.
+    """
     sflag = 0
 
     def task_submit(self, pt, df_list):

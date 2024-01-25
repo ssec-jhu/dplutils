@@ -10,11 +10,17 @@ Backbone
    :toctree: generated
 
    PipelineExecutor
+   PipelineTask
+   PipelineGraph
 
+Executors
+---------
+
+.. currentmodule:: dplutils.pipeline.stream
 .. autosummary::
    :toctree: generated
 
-   PipelineTask
+   StreamingGraphExecutor
 
 Ray Execution
 -------------
@@ -24,3 +30,4 @@ Ray Execution
    :toctree: generated
 
    RayDataPipelineExecutor
+   RayStreamGraphExecutor

@@ -135,6 +135,25 @@ class RemoteTracker:
 
 
 class RayStreamGraphExecutor(StreamingGraphExecutor):
+    """Ray-based implementation of stream graph executor.
+
+    All task outputs are kept in object store and only de-serialized as needed
+    for execution, until yielded by :meth:`run`, where they are de-serialized on
+    the driver.
+
+    This executor will attempt to pack the cluster, irrespective of any other
+    workloads.
+
+    Note:
+      Ray cluster will be initialized with defaults upon run if it hasn't
+      already been initialized
+
+    Args:
+      ray_poll_timeout: After scheduling as many tasks as can fit, ray.wait on
+        all pending tasks for ray_poll_timeout seconds. The timeout gives
+        opportunity to re-evaluate cluster resources in case it has expanded
+        since last scheduling loop
+    """
     def __init__(self, *args, ray_poll_timeout: int = 20, **kwargs):
         super().__init__(*args, **kwargs)
         # bootstrap remote tasks at initialization and keep reference - this is
