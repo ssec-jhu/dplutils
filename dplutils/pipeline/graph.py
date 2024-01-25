@@ -87,7 +87,7 @@ class PipelineGraph(DiGraph):
     def walk_back(self, source=None, sort_key=None):
         """Walk graph backward in breadth-first order from ``source``
 
-        This is a generator that yeilds tasks encountered as it walks along
+        This is a generator that yields tasks encountered as it walks along
         edges in the reverse direction, starting at ``source``, or at the set of
         :attr:`sink_tasks` if not supplied.
 
