@@ -72,7 +72,7 @@ class PipelineGraph(DiGraph):
     def walk_fwd(self, source=None, sort_key=None):
         """Walk graph forward in breadth-first order from ``source``
 
-        This is a generator that yeilds tasks encountered as it walks along
+        This is a generator that yields tasks encountered as it walks along
         edges in the forward direction, starting at ``source``, or at the set of
         :attr:`source_tasks` if not supplied.
 
