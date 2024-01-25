@@ -138,7 +138,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
     """Ray-based implementation of stream graph executor.
 
     All task outputs are kept in object store and only de-serialized as needed
-    for execution, until yeilded by :meth:`run`, where they are de-serialized on
+    for execution, until yielded by :meth:`run`, where they are de-serialized on
     the driver.
 
     This executor will attempt to pack the cluster, irrespective of any other
