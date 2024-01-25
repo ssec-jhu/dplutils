@@ -9,6 +9,15 @@ class TRM(Enum):
 
 
 class PipelineGraph(DiGraph):
+    """Graph of pipeline tasks.
+
+    This class adds convenience functionality for task pipeline handing on top
+    of :class:`networkx.DiGraph` on which it is based.
+
+    Args:
+      graph: This is either a list of :class:`PipelineTask` objects representing a
+        simple-graph, or anything that is legal input to :class:`networkx.DiGraph`.
+    """
     def __init__(self, graph=None):
         if isinstance(graph, list) and isinstance(graph[0], PipelineTask):
             graph = path_graph(graph, DiGraph)
@@ -29,6 +38,8 @@ class PipelineGraph(DiGraph):
         return [n for n,d in self.out_degree() if d == 0]
 
     def to_list(self):
+        """Return list representation of task iff it is a simple-path graph
+        """
         if len(self.source_tasks) != 1 or len(self.sink_tasks) != 1:
             raise ValueError('to_list requires a graph with only one start and end task')
         source = self.source_tasks[0]
@@ -59,7 +70,31 @@ class PipelineGraph(DiGraph):
                 yield node
 
     def walk_fwd(self, source=None, sort_key=None):
+        """Walk graph forward in breadth-first order from ``source``
+
+        This is a generator that yeilds tasks encountered as it walks along
+        edges in the forward direction, starting at ``source``, or at the set of
+        :attr:`source_tasks` if not supplied.
+
+        Args:
+          source: starting task of walk, defaults to :attr:`source_tasks`
+          sort_key: when multiple out-egdes are encountered, sort the yeilded
+            tasks in order of callable `sort_key`, which should return a
+            sortable object given :class:`PipelineTask` as input.
+        """
         return self._walk(source or TRM.source, back=False, sort_key=sort_key)
 
     def walk_back(self, source=None, sort_key=None):
+        """Walk graph backward in breadth-first order from ``source``
+
+        This is a generator that yeilds tasks encountered as it walks along
+        edges in the reverse direction, starting at ``source``, or at the set of
+        :attr:`sink_tasks` if not supplied.
+
+        Args:
+          source: starting task of walk, defaults to :attr:`source_tasks`
+          sort_key: when multiple in-egdes are encountered, sort the yeilded
+            tasks in order of callable `sort_key`, which should return a
+            sortable object given :class:`PipelineTask` as input.
+        """
         return self._walk(source or TRM.sink, back=True, sort_key=sort_key)
