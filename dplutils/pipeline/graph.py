@@ -93,7 +93,7 @@ class PipelineGraph(DiGraph):
 
         Args:
           source: starting task of walk, defaults to :attr:`source_tasks`
-          sort_key: when multiple in-egdes are encountered, sort the yeilded
+          sort_key: when multiple in-egdes are encountered, sort the yielded
             tasks in order of callable `sort_key`, which should return a
             sortable object given :class:`PipelineTask` as input.
         """
