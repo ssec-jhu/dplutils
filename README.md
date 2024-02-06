@@ -4,6 +4,7 @@
 [![Documentation Status](https://readthedocs.org/projects/dplutils/badge/?version=latest)](https://dplutils.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/ssec-jhu/dplutils/branch/main/graph/badge.svg?token=0KPNKHRC2V)](https://codecov.io/gh/ssec-jhu/dplutils)
 [![Security Status](https://github.com/ssec-jhu/dplutils/actions/workflows/security.yml/badge.svg)](https://github.com/ssec-jhu/dplutils/actions)
+[![PyPI](https://img.shields.io/pypi/v/dplutils)](https://pypi.org/project/dplutils)
 <!---[![DOI](https://zenodo.org/badge/<insert_ID_number>.svg)](https://zenodo.org/badge/latestdoi/<insert_ID_number>) --->
 
 
@@ -13,15 +14,28 @@ Distributed Data Pipeline Utilities
 
 # Usage:
 
-## Setup
+Check out the docs at https://dplutils.readthedocs.io/en/stable/
+
+## Setup locally
+
+```
+pip install dplutils
+```
+
+You can create pipelines and run in a local ray cluster as in the example below. Either in client mode running directly
+in an interactive python session, or by submission to a locally running ray cluster.
+
+Further details on running a pipeline are listed below in the using the docker container environment.
+
+## Setup Using Docker
 
 Get (or build, see below) docker image
 
 ```
-docker pull {TBD}
+docker pull ghcr.io/ssec-jhu/dplutils:latest
 ```
 
-## Start cluster
+### Start cluster
 
 To start a cluster, start one ray head node and any number of worker nodes on network-connected hosts. To start the head
 node, running the container using the docker engine, this can be used:
