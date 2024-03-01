@@ -8,11 +8,11 @@ description = ""
 readme = "README.md"
 license = {file = "LICENSE"}
 
-requires-python = ">=3.10"  # colabfold utilities expect this (for now)
+requires-python = ">=3.10,<3.12"  # prob can relax the lower limit...
 dependencies = [
-    "pandas",
+    "pandas<2.2",  # due to ray, track at: https://github.com/ray-project/ray/issues/42842
     "numpy",
-    "ray[default]",
+    "ray[data]",
     "pyarrow",
     "networkx",
 ]
