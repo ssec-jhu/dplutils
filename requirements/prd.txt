@@ -2,5 +2,5 @@ ray[default]==2.9.3
 async-timeout==4.0.3
 pandas==2.1.4
 pyarrow==14.0.2
-numpy==1.26.2
+numpy==1.26.4
 networkx==3.2.1
