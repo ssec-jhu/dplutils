@@ -1,3 +1,5 @@
+import pytest
+import pandas as pd
 from dplutils.pipeline import PipelineTask
 from dplutils.pipeline.stream import LocalSerialExecutor, StreamTask
 from test_suite import PipelineExecutorTestSuite
@@ -24,3 +26,17 @@ def test_stream_exhausted_indicator_considers_splits(dummy_steps):
     assert pl.task_exhausted(a_task)
     a_task.split_pending.append(1)
     assert not pl.task_exhausted(a_task)
+
+
+@pytest.mark.parametrize('max_batches', [1,10,None])
+def test_stream_executor_generator_override(max_batches):
+    st = PipelineTask('task_name', lambda x: x)
+    def generator():
+        n = 12
+        for i in range(n):
+            yield pd.DataFrame({'customgen': [i]})
+    pl = LocalSerialExecutor([st], max_batches=max_batches, generator=generator)
+    res = list(pl.run())
+    expected_rows = max_batches if max_batches else 12
+    assert len(res) == expected_rows
+    assert pd.concat(res).customgen.to_list() == list(range(expected_rows))

@@ -153,6 +153,8 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         all pending tasks for ray_poll_timeout seconds. The timeout gives
         opportunity to re-evaluate cluster resources in case it has expanded
         since last scheduling loop
+      \*args, \*\*kwargs: These are passed to
+        :py:class:`StreamingGraphexecutor<dplutils.pipeline.stream.StreamingGraphExecutor>`
     """
     def __init__(self, *args, ray_poll_timeout: int = 20, **kwargs):
         super().__init__(*args, **kwargs)

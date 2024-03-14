@@ -3,8 +3,9 @@ import pandas as pd
 import networkx as nx
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from dplutils.pipeline import PipelineTask, PipelineExecutor
 from dplutils.pipeline.utils import deque_extract
 
@@ -56,6 +57,15 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
     default, for each run, it generates a indefinite stream of input dataframes
     tagged with a monotonically incrementing batch id.
 
+    Args:
+        max_batches: maximum number of batches from the source generator to feed
+          to the input task(s). Default is None, which means either exhaust the
+          source generator or run indefinitely.
+        generator: A callable that when called returns a generator which yields
+          dataframes. The yielded dataframes are assumed to be a single row, in
+          which case input task batching will be honored.
+
+
     Implementations must override abstract methods for (remote) task submission
     and polling. The following must be overriden, see their docs for more:
 
@@ -66,17 +76,18 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
     - :meth:`task_submit`
     - :meth:`task_submittable`
     """
-    def __init__(self, graph, max_batches=None):
+    def __init__(self, graph, max_batches: int=None, generator: Callable[[], Generator[pd.DataFrame, None, None]]=None):
         super().__init__(graph)
         self.max_batches = max_batches
         # make a local copy of the graph with each node wrapped in a tracker
         # object
         self.stream_graph = nx.relabel_nodes(self.graph, StreamTask)
+        self.generator_fun = generator or self.source_generator_fun
 
     def execute(self):
         self.n_sourced = 0
         self.source_exhausted = False
-        self.source_generator = self.source_generator_fun()
+        self.source_generator = self.generator_fun()
         while True:
             batch = self.execute_until_output()
             if batch is None:
@@ -120,13 +131,18 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
     def process_source(self, source):
         source_batch = []
         for _ in range(source.task.batch_size or 1):
-            source_batch.append(next(self.source_generator))
+            try:
+                source_batch.append(next(self.source_generator))
+            except StopIteration:
+                self.source_exhausted = True
+                return
             self.n_sourced += 1
             if self.n_sourced == self.max_batches:
                 self.source_exhausted = True
                 break
         source.pending.appendleft(self.task_submit(source.task, source_batch))
         source.counter += 1
+        return
 
     def enqueue_tasks(self):
         # Work through the graph in reverse order, submitting any tasks as
