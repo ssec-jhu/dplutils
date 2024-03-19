@@ -53,13 +53,16 @@ def test_pipeline_executor_set_context(dummy_executor):
 
 
 def test_pipeline_executor_output_writer(dummy_executor, tmp_path):
-    dummy_executor.writeto(tmp_path)
+    dummy_executor.writeto(tmp_path, partition_by_task=False)
     for i in range(10):
         assert (tmp_path / f'{dummy_executor.run_id}-{i}.parquet').is_file()
     data = pd.read_parquet(tmp_path / f'{dummy_executor.run_id}-{i}.parquet')
     # these test the expected data inside each batch, hence len fixed at 10
     assert len(data) == 10
     assert len(data.id) == 10
+    dummy_executor.writeto(tmp_path, partition_by_task=True)
+    for i in range(10):
+        assert (tmp_path / 'task=task2' / f'{dummy_executor.run_id}-{i}.parquet').is_file()
 
 
 def test_pipeline_executor_from_list_graph(dummy_executor, dummy_steps):

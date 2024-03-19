@@ -36,7 +36,7 @@ def test_stream_executor_generator_override(max_batches):
         for i in range(n):
             yield pd.DataFrame({'customgen': [i]})
     pl = LocalSerialExecutor([st], max_batches=max_batches, generator=generator)
-    res = list(pl.run())
+    res = list(i.data for i in pl.run())
     expected_rows = max_batches if max_batches else 12
     assert len(res) == expected_rows
     assert pd.concat(res).customgen.to_list() == list(range(expected_rows))

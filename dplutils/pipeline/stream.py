@@ -6,7 +6,7 @@ from collections import deque
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any, Callable
-from dplutils.pipeline import PipelineTask, PipelineExecutor
+from dplutils.pipeline import PipelineTask, PipelineExecutor, OutputBatch
 from dplutils.pipeline.utils import deque_extract
 
 
@@ -44,7 +44,7 @@ class StreamTask:
         return self.task.name
 
     def total_pending(self):
-        return sum(len(i)  for i in [self.data_in, self.pending, self.split_pending])
+        return sum(len(i) for i in [self.data_in, self.pending, self.split_pending])
 
 
 class StreamingGraphExecutor(PipelineExecutor, ABC):
@@ -119,7 +119,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             for ready in deque_extract(task.pending, self.is_task_ready):
                 block_info = self.task_resolve_output(ready)
                 if task in self.stream_graph.sink_tasks:
-                    return block_info.data
+                    return OutputBatch(block_info.data, task = task.name)
                 else:
                     for next_task in self.stream_graph.neighbors(task):
                         next_task.data_in.appendleft(block_info)
