@@ -32,13 +32,18 @@ class PipelineExecutorTestSuite:
 
     @pytest.mark.parametrize('partition_by_task', [None, True, False])
     @pytest.mark.parametrize('graph_type, factor', [('dummy_steps', 1), ('dummy_pipeline_graph', 2), ('multi_output_graph', 2)])
-    def test_write_pipeline(self, partition_by_task, graph_type, factor, graph_suite, tmp_path, max_batches):
+    @pytest.mark.parametrize('part_name', [None, 'task_part'])
+    def test_write_pipeline(self, partition_by_task, graph_type, part_name, factor, graph_suite, tmp_path, max_batches):
         pl = self.executor(graph_suite[graph_type], max_batches=max_batches)
-        pl.writeto(tmp_path, partition_by_task=partition_by_task)
-        # these two graphs have only one output
+        kwargs = {}
+        if part_name is not None:
+            kwargs = {'task_partition_name': part_name}
+        pl.writeto(tmp_path, partition_by_task=partition_by_task, **kwargs)
+        part_name = part_name or 'task'
+        # these two graphs have only one output, so default is not to partition
         if graph_type in ['dummy_steps', 'dummy_pipeline_graph']:
             sink = pl.graph.sink_tasks[0].name
-            part_path = tmp_path / f'task={sink}'
+            part_path = tmp_path / f'{part_name}={sink}'
             if partition_by_task is None or not partition_by_task:
                 assert not part_path.exists() and not part_path.is_dir()
                 assert len(list(tmp_path.glob('*.parquet'))) == max_batches*factor
@@ -52,9 +57,10 @@ class PipelineExecutorTestSuite:
                 assert len(list(tmp_path.glob('*.parquet'))) == max_batches*factor
             else:
                 for sink in sinks:
-                    part_path = tmp_path / f'task={sink}'
+                    part_path = tmp_path / f'{part_name}={sink}'
                     assert part_path.is_dir()
                     assert len(list(part_path.glob('*.parquet'))) == max_batches
+        assert not pd.read_parquet(tmp_path).empty
 
     def test_with_split_batch(self, dummy_steps, max_batches):
         pl = self.executor(dummy_steps, max_batches=max_batches)
