@@ -131,8 +131,9 @@ class PipelineExecutor(ABC):
 
             task.func(prev_out_dataframe, **task.resolve_kwargs(self.context))
 
-        The method should return an iterator to the DataFrame batches of the
-        terminal tasks in the graph as they complete.
+        The method should return an iterator to the batches dataframes (stored
+        as :py:meth:`OutputBatch<OutputBatch>`s) of the terminal tasks in the
+        graph as they complete.
         """
         pass
 
