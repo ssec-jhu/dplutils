@@ -6,7 +6,7 @@ from copy import copy
 from dataclasses import dataclass
 from itertools import chain
 from dplutils import observer
-from dplutils.pipeline import PipelineTask, PipelineExecutor
+from dplutils.pipeline import PipelineTask, PipelineExecutor, OutputBatch
 from dplutils.pipeline.stream import StreamingGraphExecutor, StreamBatch
 
 
@@ -100,8 +100,9 @@ class RayDataPipelineExecutor(PipelineExecutor):
 
     def execute(self):
         pipeline = self.make_pipeline()
+        sink_task_n = self.graph.sink_tasks[0].name  # there can be only one
         for batch in pipeline.iter_batches(batch_size = None, batch_format = 'pandas', prefetch_batches = 0):
-            yield batch
+            yield OutputBatch(batch, task=sink_task_n)
 
 
 def get_stream_wrapper(task: PipelineTask, context: dict):
@@ -180,7 +181,8 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         if not ray.is_initialized():
             ray.init()
         for batch in super().execute():
-            yield ray.get(batch)
+            batch.data = ray.get(batch.data)
+            yield batch
 
     def task_submittable(self, task, rank):
         cluster_r = ray.cluster_resources()

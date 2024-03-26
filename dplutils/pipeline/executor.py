@@ -3,11 +3,18 @@ import pandas as pd
 import yaml
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from collections.abc import Iterable
 from dplutils.pipeline.graph import PipelineGraph
 from dplutils.pipeline.utils import dict_from_coord
+
+
+@dataclass
+class OutputBatch:
+    data: pd.DataFrame
+    task: str = None
 
 
 class PipelineExecutor(ABC):
@@ -108,7 +115,7 @@ class PipelineExecutor(ABC):
         return self._run_id
 
     @abstractmethod
-    def execute(self) -> Iterable[pd.DataFrame]:
+    def execute(self) -> Iterable[OutputBatch]:
         """Execute the task graph in batches.
 
         This method must be overridden by implementations. It should arrange for
@@ -124,12 +131,13 @@ class PipelineExecutor(ABC):
 
             task.func(prev_out_dataframe, **task.resolve_kwargs(self.context))
 
-        The method should return an iterator to the DataFrame batches of the
-        terminal tasks in the graph as they complete.
+        The method should return an iterator to the batches dataframes (stored
+        as :py:meth:`OutputBatch<OutputBatch>`s) of the terminal tasks in the
+        graph as they complete.
         """
         pass
 
-    def run(self) -> Iterable[pd.DataFrame]:
+    def run(self) -> Iterable[OutputBatch]:
         """Validate and run the pipeline.
 
         Calls the ``self.execute`` method, and returns an iterator to batches as
@@ -139,11 +147,29 @@ class PipelineExecutor(ABC):
         self._run_id = None  # force reallocation
         return self.execute()
 
-    def writeto(self, outdir: Path|str) -> None:
+    def writeto(self, outdir: Path|str, partition_by_task: bool|None = None, task_partition_name: str = 'task') -> None:
         """Run pipeline, writing results to parquet table.
 
         args:
             outdir: path to the directory in which to write files
+            partition_by_task: If True, always create a hive-style partition by
+              the output task name in the output directory. If false, never
+              create such a partition. If None (default), create partitions if
+              there are multiple sink tasks, otherwise do not.
+            task_partition_name: name of the hive-style partition for
+              tasks. Default is task, e.g. create paths like
+              ``{outdir}/task={task}/...``
         """
+        if partition_by_task is None:
+            partition_by_task = False if len(self.graph.sink_tasks) == 1 else True
+
+        Path(outdir).mkdir(parents=True, exist_ok=True)
         for c, batch in enumerate(self.run()):
-            batch.to_parquet(Path(outdir) / f'{self.run_id}-{c}.parquet', index=False)
+            if partition_by_task:
+                part_name = batch.task or '__HIVE_DEFAULT_PARTITION__'
+                part_path = Path(outdir) / f'{task_partition_name}={part_name}'
+                part_path.mkdir(exist_ok=True)
+                outfile = part_path / f'{self.run_id}-{c}.parquet'
+            else:
+                outfile = Path(outdir) / f'{self.run_id}-{c}.parquet'
+            batch.data.to_parquet(outfile, index=False)

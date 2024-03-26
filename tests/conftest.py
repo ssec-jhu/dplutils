@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 import ray
 from pathlib import Path
-from dplutils.pipeline import PipelineTask, PipelineExecutor, PipelineGraph
+from dplutils.pipeline import PipelineTask, PipelineExecutor, OutputBatch, PipelineGraph
 
 
 DATA_PATH = Path(__file__).parent / "data"
@@ -28,7 +28,7 @@ def test_file(tmp_path_factory):
 class DummyExecutor(PipelineExecutor):
     def execute(self):
         for i in range(10):
-            yield pd.DataFrame({'id': range(10)})
+            yield OutputBatch(pd.DataFrame({'id': range(10)}), task=self.graph.sink_tasks[0].name)
 
 
 @pytest.fixture
@@ -52,6 +52,23 @@ def dummy_pipeline_graph():
     t2B = PipelineTask('task2B', lambda x: x.assign(t2B = '2B'))
     t3 = PipelineTask('task3', lambda x: x.assign(t3 = '3'))
     return PipelineGraph([(t1, t2A), (t1, t2B), (t2A, t3), (t2B, t3)])
+
+
+@pytest.fixture
+def multi_output_graph():
+    t1 = PipelineTask('task1', lambda x: x.assign(t1 = '1'))
+    t2A = PipelineTask('task2A', lambda x: x.assign(t2A = '2A'))
+    t2B = PipelineTask('task2B', lambda x: x.assign(t2B = '2B'))
+    return PipelineGraph([(t1, t2A), (t1, t2B)])
+
+
+@pytest.fixture
+def graph_suite(dummy_steps, dummy_pipeline_graph, multi_output_graph):
+    return {
+        'dummy_steps': dummy_steps,
+        'dummy_pipeline_graph': dummy_pipeline_graph,
+        'multi_output_graph': multi_output_graph,
+    }
 
 
 @pytest.fixture
