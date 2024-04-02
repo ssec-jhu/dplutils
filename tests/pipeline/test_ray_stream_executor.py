@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+import ray
 import dplutils.pipeline.ray
 from dplutils.pipeline import PipelineTask
 from dplutils.pipeline.ray import RayStreamGraphExecutor, get_stream_wrapper, stream_split_func
@@ -50,3 +51,14 @@ def test_ray_stream_ray_autoinit(monkeypatch, dummy_steps):
     assert not im.is_initialized()
     next(pl.run())
     assert im.is_initialized()
+
+def test_ray_stream_remote_tasks_configuration_applies():
+    def get_runtime_env(x):
+        ncpu = ray.runtime_context.get_runtime_context().get_assigned_resources()['CPU']
+        return x.assign(ncpu = ncpu)
+
+    pl = RayStreamGraphExecutor([PipelineTask('task', get_runtime_env)], max_batches=1)
+    res_df = next(pl.run()).data
+    assert(res_df.iloc[0].ncpu == 1)
+    res_df = next(pl.set_config('task.num_cpus', 0.1).run()).data
+    assert(res_df.iloc[0].ncpu == 0.1)

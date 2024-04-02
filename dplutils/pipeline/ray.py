@@ -159,10 +159,15 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
     """
     def __init__(self, *args, ray_poll_timeout: int = 20, **kwargs):
         super().__init__(*args, **kwargs)
-        # bootstrap remote tasks at initialization and keep reference - this is
-        # more efficient than doing so for each remote task run due to required
-        # serialization
         self.ray_poll_timeout = ray_poll_timeout
+        self.remote_splitter = ray.remote(stream_split_func)
+        self.sched_resources = defaultdict(float)
+
+    def _setup_remote_tasks(self):
+        # bootstrap remote tasks prior to execution and keep reference - this is
+        # more efficient than doing so for each remote task run due to required
+        # serialization. This should be done just prior to running, as task ray
+        # configuration and resources will be baked into the remote.
         self.remote_task_map = {}
         for name, task in self.graph.task_map.items():
             self.remote_task_map[name] = ray.remote(
@@ -174,12 +179,11 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
                 name = f'{task.name}<{task.func.__name__}>',
                 num_returns = 2,  # the remote wrapper returns (len of df, df)
             )
-        self.remote_splitter = ray.remote(stream_split_func)
-        self.sched_resources = defaultdict(float)
 
     def execute(self):
         if not ray.is_initialized():
             ray.init()
+        self._setup_remote_tasks()
         for batch in super().execute():
             batch.data = ray.get(batch.data)
             yield batch
