@@ -1,6 +1,7 @@
 import ray
 import pandas as pd
 import pytest
+from ray.exceptions import RayTaskError
 from dplutils.pipeline import  PipelineTask, OutputBatch
 from dplutils.pipeline.ray import RayDataPipelineExecutor, get_remote_wrapper, set_run_id
 from dplutils import observer
@@ -57,7 +58,9 @@ def test_ray_metrics_observer_incompatible_type_excepts(raysession, task_batch_s
         observer.increment('gauge')
         return indf
     pl = RayDataPipelineExecutor([PipelineTask('task', confused_task)], n_batches=2)
-    with pytest.raises(TypeError):
+    # for ray 2.10+ unfortunately ray data no longer unfolds exception, and
+    # in fact doesn't look like a way to get at it
+    with pytest.raises((TypeError, RayTaskError)):
         for batch in pl.set_config('task.batch_size', task_batch_size).run():
             pass
 
