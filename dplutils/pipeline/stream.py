@@ -135,7 +135,9 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 source_batch.append(next(self.source_generator))
             except StopIteration:
                 self.source_exhausted = True
-                return
+                if len(source_batch) == 0:
+                    return
+                break
             self.n_sourced += 1
             if self.n_sourced == self.max_batches:
                 self.source_exhausted = True
