@@ -1,6 +1,5 @@
 import json
 from argparse import ArgumentParser, Namespace
-from dplutils.pipeline.utils import dict_from_coord
 from dplutils.pipeline import PipelineExecutor
 
 
@@ -49,14 +48,6 @@ def parse_config_element(conf):
     return k, v
 
 
-def config_dict_from_args(args):
-    config = {}
-    for conf in args.set_config:
-        k,v = parse_config_element(conf)
-        config.update(dict_from_coord(k, v))
-    return config
-
-
 def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
     """Configure pipeline using config from arguments
 
@@ -72,9 +63,8 @@ def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
     """
     for ctx in args.set_context:
         pipeline.set_context(*parse_config_element(ctx))
-    config = config_dict_from_args(args)
-    if config:
-        pipeline.set_config_from_dict(config)
+    for conf in args.set_config:
+        pipeline.set_config(*parse_config_element(conf))
 
 
 def cli_run(pipeline: PipelineExecutor, args: Namespace|None = None,  **argparse_kwargs):
