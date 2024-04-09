@@ -40,3 +40,20 @@ def test_stream_executor_generator_override(max_batches):
     expected_rows = max_batches if max_batches else 12
     assert len(res) == expected_rows
     assert pd.concat(res).customgen.to_list() == list(range(expected_rows))
+
+
+@pytest.mark.parametrize('gen_n', [0, 4])
+def test_stream_executor_exhausts_input_when_source_batchsize_larger_than_input(gen_n):
+    st = PipelineTask('task_name', lambda x: x, batch_size=10)
+    def generator():
+        n = gen_n
+        for i in range(n):
+            yield pd.DataFrame({'customgen': [i]})
+    pl = LocalSerialExecutor([st], generator=generator)
+    res = [i.data for i in pl.run()]
+    if gen_n > 0:
+        assert len(res) == 1
+        assert len(res[0]) == gen_n
+    else:
+        # do not submit empty source batches
+        assert len(res) == 0
