@@ -1,7 +1,7 @@
 Configuring Pipelines
 =====================
 
-Here configuration refers to runtime variables used to control the behaviour of a particular pipeline run. There are
+Here configuration refers to runtime variables used to control the behavior of a particular pipeline run. There are
 three main types of configuration to consider:
 
 * Task resource requirements: These are settings of the parameters of pipeline tasks such as `num_cpus`, `num_gpus`,

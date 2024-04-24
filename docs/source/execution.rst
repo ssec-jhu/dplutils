@@ -64,7 +64,7 @@ The `write()` method executes `run()` and writes out resultant dataframes from s
 specified directory (specified by `outdir`). It writes a file per output batch yielded from sinks marked with the run ID
 and a monotonic increasing ID in order generated. It will by default write batches to hive-style partitions for each
 sink task (e.g. `{outdir}/task={task_name}/`), in the case that there are multiple sink tasks in the graph, or write
-parquet files directly under output if there is only a single source task. This behaviour can be controlled via the
+parquet files directly under output if there is only a single source task. This behavior can be controlled via the
 `partition_by_task` argument.
 
 A typical parquet reader will understand how to read a multi-file partitioned dataset as generated above. For example,
@@ -80,4 +80,4 @@ Or using duckdb::
   ddb.query('''SELECT * FROM '{outdir}/*/*.parquet' ''')
 
 assuming the output is partitioned one level deep. Both of these will generate a table that has a column for the
-hive-partitioned data, which in this case is a string columne named task.
+hive-partitioned data, which in this case is a string column named task.
