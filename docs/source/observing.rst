@@ -1,4 +1,4 @@
-Observers
+Observing
 =========
 
 This package includes some utilities for observing the progress and performance of running pipelines. In a similar
