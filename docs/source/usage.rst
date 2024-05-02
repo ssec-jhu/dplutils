@@ -7,5 +7,6 @@ Usage
    tasks_graphs
    configuration
    execution
+   observing
    command_line
    extending
