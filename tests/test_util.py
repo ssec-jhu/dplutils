@@ -1,5 +1,5 @@
-from dplutils.util import find_package_location, find_repo_location
 from dplutils import __project__, __version__
+from dplutils.util import find_package_location, find_repo_location
 
 
 def test_version():

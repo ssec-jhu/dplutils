@@ -17,6 +17,7 @@ class Timer:
         with observer.timer('calltime'):
             <<do something>>
     """
+
     def __init__(self, observer, name, **kwargs):
         self.observer = observer
         self.name = name
@@ -36,7 +37,7 @@ class Timer:
 
     def complete(self):
         if not self.started:
-            raise ValueError('Timer not started!')
+            raise ValueError("Timer not started!")
         self.stop()
         self.observer.observe(self.name, self.accum, **self.kwargs)
 
@@ -59,6 +60,7 @@ class Observer(ABC):
     While implementations are required to implement ``observe``, ``increment``
     and ``param``, there may be legitimit cases where the recording of
     """
+
     @abstractmethod
     def observe(self, name, value, **kwargs):
         """Observe a metric value
@@ -130,6 +132,7 @@ class NoOpObserver(Observer):
     This is akin to the ``NullHandler<logging.NullHandler>`` in the logging
     module and is the default upon initialization.
     """
+
     def observe(*args):
         """This method does nothing"""
         pass
@@ -150,6 +153,7 @@ class InMemoryObserver(Observer):
     each element in the list is a tuple (recorded_unix_time, value). Params are
     stored in a separate dict keyed by the parameter ``name``.
     """
+
     def __init__(self):
         self.metrics = defaultdict(list)
         self.params = {}
@@ -168,39 +172,39 @@ class InMemoryObserver(Observer):
         self.params[name] = value
 
     def dump(self):
-        return {'params': self.params, 'metrics': self.metrics}
+        return {"params": self.params, "metrics": self.metrics}
 
 
 observer_map = {
-    'root': NoOpObserver(),
+    "root": NoOpObserver(),
 }
 
 
-def set_observer(obs, key='root'):
+def set_observer(obs, key="root"):
     """Set the global observer at ``key``"""
     observer_map[key] = obs
 
 
-def get_observer(key='root'):
+def get_observer(key="root"):
     """Get the global observer at ``key``"""
-    return observer_map.get(key, observer_map['root'])
+    return observer_map.get(key, observer_map["root"])
 
 
 def observe(*args, **kwargs):
     """call observe on the root observer"""
-    observer_map['root'].observe(*args, **kwargs)
+    observer_map["root"].observe(*args, **kwargs)
 
 
 def increment(*args, **kwargs):
     """call increment on the root observer"""
-    observer_map['root'].increment(*args, **kwargs)
+    observer_map["root"].increment(*args, **kwargs)
 
 
 def param(*args, **kwargs):
     """call param on the root observer"""
-    observer_map['root'].param(*args, **kwargs)
+    observer_map["root"].param(*args, **kwargs)
 
 
 def timer(*args, **kwargs):
     """call timer on the root observer"""
-    return observer_map['root'].timer(*args, **kwargs)
+    return observer_map["root"].timer(*args, **kwargs)

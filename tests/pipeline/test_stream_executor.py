@@ -1,8 +1,9 @@
-import pytest
 import pandas as pd
+import pytest
+from test_suite import PipelineExecutorTestSuite
+
 from dplutils.pipeline import PipelineTask
 from dplutils.pipeline.stream import LocalSerialExecutor, StreamTask
-from test_suite import PipelineExecutorTestSuite
 
 
 class TestStreamingExecutorDefault(PipelineExecutorTestSuite):
@@ -10,8 +11,8 @@ class TestStreamingExecutorDefault(PipelineExecutorTestSuite):
 
 
 def test_stream_task_wrapper():
-    st = StreamTask(PipelineTask('task_name', lambda x: 1))
-    assert st.name == 'task_name'
+    st = StreamTask(PipelineTask("task_name", lambda x: 1))
+    assert st.name == "task_name"
     assert hash(st)  # ensure it is hashable
     assert st.total_pending() == 0
     st.data_in.append(1)
@@ -22,19 +23,21 @@ def test_stream_task_wrapper():
 
 def test_stream_exhausted_indicator_considers_splits(dummy_steps):
     pl = LocalSerialExecutor(dummy_steps)
-    a_task = pl.stream_graph.task_map['task2']
+    a_task = pl.stream_graph.task_map["task2"]
     assert pl.task_exhausted(a_task)
     a_task.split_pending.append(1)
     assert not pl.task_exhausted(a_task)
 
 
-@pytest.mark.parametrize('max_batches', [1,10,None])
+@pytest.mark.parametrize("max_batches", [1, 10, None])
 def test_stream_executor_generator_override(max_batches):
-    st = PipelineTask('task_name', lambda x: x)
+    st = PipelineTask("task_name", lambda x: x)
+
     def generator():
         n = 12
         for i in range(n):
-            yield pd.DataFrame({'customgen': [i]})
+            yield pd.DataFrame({"customgen": [i]})
+
     pl = LocalSerialExecutor([st], max_batches=max_batches, generator=generator)
     res = list(i.data for i in pl.run())
     expected_rows = max_batches if max_batches else 12
@@ -42,13 +45,15 @@ def test_stream_executor_generator_override(max_batches):
     assert pd.concat(res).customgen.to_list() == list(range(expected_rows))
 
 
-@pytest.mark.parametrize('gen_n', [0, 4])
+@pytest.mark.parametrize("gen_n", [0, 4])
 def test_stream_executor_exhausts_input_when_source_batchsize_larger_than_input(gen_n):
-    st = PipelineTask('task_name', lambda x: x, batch_size=10)
+    st = PipelineTask("task_name", lambda x: x, batch_size=10)
+
     def generator():
         n = gen_n
         for i in range(n):
-            yield pd.DataFrame({'customgen': [i]})
+            yield pd.DataFrame({"customgen": [i]})
+
     pl = LocalSerialExecutor([st], generator=generator)
     res = [i.data for i in pl.run()]
     if gen_n > 0:

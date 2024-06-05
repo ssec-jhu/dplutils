@@ -22,6 +22,7 @@ class AimObserver(Observer):
         Aim does not track the time with metric, only the step and this
         implementation uses the default auto-increment step counter.
     """
+
     def __init__(self, run=None, **aim_kwargs):
         if run is not None:
             self.run = run

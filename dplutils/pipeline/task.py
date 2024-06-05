@@ -1,8 +1,9 @@
-import pandas as pd
 from copy import copy
 from dataclasses import dataclass, field, replace
-from inspect import signature, _empty
-from typing import Callable, Any
+from inspect import _empty, signature
+from typing import Any, Callable
+
+import pandas as pd
 
 
 @dataclass
@@ -40,6 +41,7 @@ class PipelineTask:
         resources: dict of any additional resources to pass to the executor
         batch_size: ideal batch size for this workload.
     """
+
     name: str
     func: Callable[[pd.DataFrame, ...], pd.DataFrame]
     context_kwargs: dict[str, str] = field(default_factory=dict)
@@ -52,7 +54,7 @@ class PipelineTask:
     def __call__(self, name: str = None, **kwargs):
         if name is None:
             name = self.name
-        return replace(self, name = name, **kwargs)
+        return replace(self, name=name, **kwargs)
 
     def resolve_kwargs(self, context: dict):
         """Return a dict of final keyword arguments for the given context.
@@ -61,7 +63,7 @@ class PipelineTask:
         based on the given context to pass to ``func``.
         """
         kwargs = copy(self.kwargs)
-        kwargs.update({k: context[v] for k,v in self.context_kwargs.items() if v in context})
+        kwargs.update({k: context[v] for k, v in self.context_kwargs.items() if v in context})
         return kwargs
 
     def validate(self, context: dict):
@@ -79,13 +81,13 @@ class PipelineTask:
         for key, param in params:
             if param.default == _empty:
                 if key not in all_kwargs:
-                    msg = f'missing required argument {key} for task {self.name}'
+                    msg = f"missing required argument {key} for task {self.name}"
                     if key in self.context_kwargs:
-                        msg = f'{msg} - expected from context {self.context_kwargs[key]}'
+                        msg = f"{msg} - expected from context {self.context_kwargs[key]}"
                     raise ValueError(msg)
-        extra = set(all_kwargs.keys()) - {k for k,v in params}
+        extra = set(all_kwargs.keys()) - {k for k, v in params}
         if len(extra) > 0:
-            raise ValueError(f'unkown arguments {extra} for task {self.name}')
+            raise ValueError(f"unkown arguments {extra} for task {self.name}")
 
     def __hash__(self):
         return hash(self.name)
