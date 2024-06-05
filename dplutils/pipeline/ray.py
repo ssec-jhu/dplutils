@@ -1,23 +1,26 @@
-import ray
-import pandas as pd
-import numpy as np
 from collections import defaultdict
 from copy import copy
 from dataclasses import dataclass
 from itertools import chain
+
+import numpy as np
+import pandas as pd
+import ray
+
 from dplutils import observer
-from dplutils.pipeline import PipelineTask, PipelineExecutor, OutputBatch
-from dplutils.pipeline.stream import StreamingGraphExecutor, StreamBatch
+from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
+from dplutils.pipeline.stream import StreamBatch, StreamingGraphExecutor
 
 
 def set_run_id(inputs, run_id):
-    inputs.rename(columns={'id': 'batch_id'}, inplace=True)
-    inputs['run_id'] = run_id
+    inputs.rename(columns={"id": "batch_id"}, inplace=True)
+    inputs["run_id"] = run_id
     return inputs
 
 
 def get_remote_wrapper(task: PipelineTask, context: dict):
     obs = observer.get_observer()
+
     def funcwrapper(indf, **kwargs):
         observer.set_observer(obs)
         return task.func(indf, **kwargs)
@@ -28,18 +31,22 @@ def get_remote_wrapper(task: PipelineTask, context: dict):
         if task.batch_size is None:
             return funcwrapper(indf, **kwargs)
 
-        splits = np.array_split(indf, np.ceil(len(indf)/task.batch_size))
+        splits = np.array_split(indf, np.ceil(len(indf) / task.batch_size))
         refs = [
-            ray.remote(funcwrapper).options(
-                num_cpus=task.num_cpus, num_gpus=task.num_gpus, resources=task.resources,
-            ).remote(i, **kwargs)
+            ray.remote(funcwrapper)
+            .options(
+                num_cpus=task.num_cpus,
+                num_gpus=task.num_gpus,
+                resources=task.resources,
+            )
+            .remote(i, **kwargs)
             for i in splits
         ]
         return pd.concat(ray.get(refs))
 
     # Ray data uses the function name to name the underlying remote tasks, override for the wrapper for better
     # observability
-    wrapper.__name__ = f'{task.name}<{task.func.__name__}>'
+    wrapper.__name__ = f"{task.name}<{task.func.__name__}>"
     return wrapper
 
 
@@ -67,33 +74,30 @@ class RayDataPipelineExecutor(PipelineExecutor):
         **kwargs: kwargs passed to
           :class:`PipelineExecutor<dplutils.pipeline.executor.PipelineExecutor>`.
     """
+
     def __init__(self, graph, n_batches: int = 100, **kwargs):
         super().__init__(graph, **kwargs)
         self.tasks = self.graph.to_list()
         self.n_batches = n_batches
 
     def make_pipeline(self):
-        pipeline = ray \
-            .data \
-            .range(self.n_batches, parallelism=self.n_batches) \
-            .map_batches(
-                set_run_id,
-                batch_format = 'pandas',
-                fn_kwargs = {'run_id': self.run_id})
+        pipeline = ray.data.range(self.n_batches, parallelism=self.n_batches).map_batches(
+            set_run_id, batch_format="pandas", fn_kwargs={"run_id": self.run_id}
+        )
         for task in self.tasks:
             ray_args = dict()
             if task.batch_size is None:
                 # batch size set triggers the wrapper to run remote functions and resources must be set there,
                 # map_batches task would get default of 1 cpu (could be 0?)
                 ray_args = dict(
-                    num_cpus = task.num_cpus,
-                    num_gpus = task.num_gpus,
-                    resources = task.resources,
+                    num_cpus=task.num_cpus,
+                    num_gpus=task.num_gpus,
+                    resources=task.resources,
                 )
             pipeline = pipeline.map_batches(
                 get_remote_wrapper(task, self.ctx),
-                batch_format = 'pandas',
-                batch_size = None,
+                batch_format="pandas",
+                batch_size=None,
                 **ray_args,
             )
         return pipeline
@@ -101,18 +105,20 @@ class RayDataPipelineExecutor(PipelineExecutor):
     def execute(self):
         pipeline = self.make_pipeline()
         sink_task_n = self.graph.sink_tasks[0].name  # there can be only one
-        for batch in pipeline.iter_batches(batch_size = None, batch_format = 'pandas', prefetch_batches = 0):
+        for batch in pipeline.iter_batches(batch_size=None, batch_format="pandas", prefetch_batches=0):
             yield OutputBatch(batch, task=sink_task_n)
 
 
 def get_stream_wrapper(task: PipelineTask, context: dict):
     obs = observer.get_observer()
+
     def wrapper(*df_list):
         observer.set_observer(obs)
         task_df = pd.concat(df_list)
         kwargs = task.resolve_kwargs(context)
         df = task.func(task_df, **kwargs)
         return len(df), df
+
     return wrapper
 
 
@@ -123,9 +129,9 @@ def stream_split_func(df, splits):
 
 def task_resources(task):
     r = copy(task.resources)
-    r['num_cpus'] = task.num_cpus
-    r['num_gpus'] = task.num_gpus
-    return {k: v or 0 for k,v in r.items()}
+    r["num_cpus"] = task.num_cpus
+    r["num_gpus"] = task.num_gpus
+    return {k: v or 0 for k, v in r.items()}
 
 
 @dataclass
@@ -157,6 +163,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
       \*args, \*\*kwargs: These are passed to
         :py:class:`StreamingGraphexecutor<dplutils.pipeline.stream.StreamingGraphExecutor>`
     """
+
     def __init__(self, *args, ray_poll_timeout: int = 20, **kwargs):
         super().__init__(*args, **kwargs)
         self.ray_poll_timeout = ray_poll_timeout
@@ -170,14 +177,12 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         # configuration and resources will be baked into the remote.
         self.remote_task_map = {}
         for name, task in self.graph.task_map.items():
-            self.remote_task_map[name] = ray.remote(
-                get_stream_wrapper(task, self.ctx)
-            ).options(
-                num_cpus = task.num_cpus,
-                num_gpus = task.num_gpus,
-                resources = task.resources,
-                name = f'{task.name}<{task.func.__name__}>',
-                num_returns = 2,  # the remote wrapper returns (len of df, df)
+            self.remote_task_map[name] = ray.remote(get_stream_wrapper(task, self.ctx)).options(
+                num_cpus=task.num_cpus,
+                num_gpus=task.num_gpus,
+                resources=task.resources,
+                name=f"{task.name}<{task.func.__name__}>",
+                num_returns=2,  # the remote wrapper returns (len of df, df)
             )
 
     def execute(self):
@@ -190,7 +195,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
 
     def task_submittable(self, task, rank):
         cluster_r = ray.cluster_resources()
-        ck_map = {'num_cpus': 'CPU', 'num_gpus': 'GPU'}
+        ck_map = {"num_cpus": "CPU", "num_gpus": "GPU"}
         task_r = task_resources(task)
         for k in task_r:
             avail = cluster_r.get(ck_map.get(k, k), 0) - self.sched_resources.get(k, 0)
@@ -206,7 +211,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
 
     def task_submit(self, task, df_list):
         remote_task = self.remote_task_map[task.name]
-        for r,v in task_resources(task).items():
+        for r, v in task_resources(task).items():
             self.sched_resources[r] += v
         refs = remote_task.remote(*df_list)
         return RemoteTracker(task, refs)
@@ -216,19 +221,19 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         if len(ready) == 0:
             return False
         if not remote_task.is_split:
-            for r,v in task_resources(remote_task.task).items():
+            for r, v in task_resources(remote_task.task).items():
                 self.sched_resources[r] -= v
         return True
 
     def split_batch_submit(self, stream_batch, max_rows):
-        splits = int(np.ceil(stream_batch.length/max_rows))
-        refs = self.remote_splitter.options(num_returns=splits*2).remote(stream_batch.data, splits)
+        splits = int(np.ceil(stream_batch.length / max_rows))
+        refs = self.remote_splitter.options(num_returns=splits * 2).remote(stream_batch.data, splits)
         return RemoteTracker(None, refs, True)
 
     def task_resolve_output(self, remote_task):
         if remote_task.is_split:
             num = int(len(remote_task.refs) / 2)
-            return [StreamBatch(ray.get(remote_task.refs[i]), remote_task.refs[i+num]) for i in range(num)]
+            return [StreamBatch(ray.get(remote_task.refs[i]), remote_task.refs[i + num]) for i in range(num)]
         return StreamBatch(ray.get(remote_task.refs[0]), remote_task.refs[1])
 
     def poll_tasks(self, remote_task_list):

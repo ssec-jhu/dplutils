@@ -1,5 +1,6 @@
 import ray
 from ray.util.metrics import Counter, Gauge
+
 from dplutils.observer import Observer
 
 
@@ -15,6 +16,7 @@ class RayActorWrappedObserver(Observer):
         *args: Args to pass to ``cls`` instantiation
         **kwargs: Keyword args to pass to ``cls`` instantiation
     """
+
     def __init__(self, cls, *args, **kwargs):
         self.actor = ray.remote(cls).remote(*args, **kwargs)
         self._wait = False  # for testing purposes. If true wait instead of fire-and-forget
@@ -41,6 +43,7 @@ class RayMetricsObserver(Observer):
     objects, this can be used directly having copies per worker (so does not
     need to be wrapped in actor).
     """
+
     def __init__(self):
         self.mmap = {}
 
@@ -48,7 +51,7 @@ class RayMetricsObserver(Observer):
         if name in self.mmap:
             metric = self.mmap[name]
             if not isinstance(metric, kind):
-                raise TypeError(f'setting metric requires {kind}, but {name} is {type(metric)}')
+                raise TypeError(f"setting metric requires {kind}, but {name} is {type(metric)}")
         else:
             metric = kind(name)
             self.mmap[name] = metric

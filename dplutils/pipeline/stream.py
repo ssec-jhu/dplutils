@@ -1,12 +1,14 @@
-import numpy as np
-import pandas as pd
-import networkx as nx
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any, Callable
-from dplutils.pipeline import PipelineTask, PipelineExecutor, OutputBatch
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+
+from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
 from dplutils.pipeline.utils import deque_extract
 
 
@@ -22,14 +24,15 @@ class StreamBatch:
         meaningful to implementation. This field is not introspected, only
         passed by the framework.
     """
+
     length: int
     data: Any
 
 
 @dataclass
 class StreamTask:
-    """Internal task wrapper for :class:`StreamingGraphExecutor`
-    """
+    """Internal task wrapper for :class:`StreamingGraphExecutor`"""
+
     task: PipelineTask
     data_in: list[StreamBatch] = field(default_factory=deque)
     pending: list = field(default_factory=deque)
@@ -76,7 +79,10 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
     - :meth:`task_submit`
     - :meth:`task_submittable`
     """
-    def __init__(self, graph, max_batches: int=None, generator: Callable[[], Generator[pd.DataFrame, None, None]]=None):
+
+    def __init__(
+        self, graph, max_batches: int = None, generator: Callable[[], Generator[pd.DataFrame, None, None]] = None
+    ):
         super().__init__(graph)
         self.max_batches = max_batches
         # make a local copy of the graph with each node wrapped in a tracker
@@ -97,7 +103,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
     def source_generator_fun(self):
         bid = 0
         while True:
-            yield pd.DataFrame({'run_id': [self.run_id], 'id': [bid]})
+            yield pd.DataFrame({"run_id": [self.run_id], "id": [bid]})
             bid += 1
 
     def get_pending(self):
@@ -119,7 +125,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             for ready in deque_extract(task.pending, self.is_task_ready):
                 block_info = self.task_resolve_output(ready)
                 if task in self.stream_graph.sink_tasks:
-                    return OutputBatch(block_info.data, task = task.name)
+                    return OutputBatch(block_info.data, task=task.name)
                 else:
                     for next_task in self.stream_graph.neighbors(task):
                         next_task.data_in.appendleft(block_info)
@@ -295,6 +301,7 @@ class LocalSerialExecutor(StreamingGraphExecutor):
     This reference implementation demonstrates expected outputs for abstract
     methods, feeding a single batch at a time source to sink in the main thread.
     """
+
     sflag = 0
 
     def task_submit(self, pt, df_list):
@@ -327,7 +334,7 @@ def deque_num_merge(queue, batch_size):
         # So long as batch size is set, try to merge if necessary. Proceed in
         # fifo order and take up to batch_size rows, but no more.
         s_accum = np.cumsum([i.length for i in reversed(queue)])
-        idxs, = np.where(s_accum >= batch_size)
+        (idxs,) = np.where(s_accum >= batch_size)
         if len(idxs) == 0:
             return 0
         return idxs[0] + 1

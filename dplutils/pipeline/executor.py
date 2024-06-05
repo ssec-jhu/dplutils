@@ -1,12 +1,14 @@
 import uuid
-import pandas as pd
-import yaml
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable
+
+import pandas as pd
+import yaml
+
 from dplutils.pipeline.graph import PipelineGraph
 from dplutils.pipeline.utils import dict_from_coord
 
@@ -27,6 +29,7 @@ class PipelineExecutor(ABC):
     to execute the pipeline and return and generator of dataframes of the final
     tasks in the graph.
     """
+
     def __init__(self, graph: PipelineGraph):
         if isinstance(graph, list):
             self.graph = PipelineGraph(deepcopy(graph))
@@ -36,21 +39,21 @@ class PipelineExecutor(ABC):
         self._run_id = None
 
     @classmethod
-    def from_graph(cls, graph: PipelineGraph) -> 'PipelineExecutor':
+    def from_graph(cls, graph: PipelineGraph) -> "PipelineExecutor":
         return cls(graph)
 
     @property
     def tasks_idx(self):  # for back compat
         return self.graph.task_map
 
-    def set_context(self, key, value) -> 'PipelineExecutor':
+    def set_context(self, key, value) -> "PipelineExecutor":
         self.ctx[key] = value
         return self
 
-    def set_config_from_dict(self, config) -> 'PipelineExecutor':
+    def set_config_from_dict(self, config) -> "PipelineExecutor":
         for task_name, confs in config.items():
             if task_name not in self.tasks_idx:
-                raise ValueError(f'no such task: {task_name}')
+                raise ValueError(f"no such task: {task_name}")
             for key, value in confs.items():
                 task = self.tasks_idx[task_name]
                 task_val = getattr(task, key)
@@ -61,11 +64,11 @@ class PipelineExecutor(ABC):
         return self
 
     def set_config(
-            self,
-            coord: str|dict|None = None,
-            value: Any|None = None,
-            from_yaml: str|Path|None = None,
-    ) -> 'PipelineExecutor':
+        self,
+        coord: str | dict | None = None,
+        value: Any | None = None,
+        from_yaml: str | Path | None = None,
+    ) -> "PipelineExecutor":
         """Set task configuration options for this instance.
 
         This applies configurations to :class:`PipelineTask
@@ -90,8 +93,8 @@ class PipelineExecutor(ABC):
         """
         if coord is None:
             if from_yaml is None:
-                raise ValueError('one of dict/string coordinate and value/file input is required')
-            with open(from_yaml, 'r') as f:
+                raise ValueError("one of dict/string coordinate and value/file input is required")
+            with open(from_yaml, "r") as f:
                 return self.set_config_from_dict(yaml.load(f, yaml.SafeLoader))
         if isinstance(coord, dict):
             return self.set_config_from_dict(coord)
@@ -106,7 +109,7 @@ class PipelineExecutor(ABC):
             except ValueError as e:
                 excs.append(str(e))
         if len(excs) > 0:
-            raise ValueError('Errors in validation:\n    - ' + '\n    - '.join(excs))
+            raise ValueError("Errors in validation:\n    - " + "\n    - ".join(excs))
 
     @property
     def run_id(self) -> str:
@@ -147,7 +150,9 @@ class PipelineExecutor(ABC):
         self._run_id = None  # force reallocation
         return self.execute()
 
-    def writeto(self, outdir: Path|str, partition_by_task: bool|None = None, task_partition_name: str = 'task') -> None:
+    def writeto(
+        self, outdir: Path | str, partition_by_task: bool | None = None, task_partition_name: str = "task"
+    ) -> None:
         """Run pipeline, writing results to parquet table.
 
         args:
@@ -166,10 +171,10 @@ class PipelineExecutor(ABC):
         Path(outdir).mkdir(parents=True, exist_ok=True)
         for c, batch in enumerate(self.run()):
             if partition_by_task:
-                part_name = batch.task or '__HIVE_DEFAULT_PARTITION__'
-                part_path = Path(outdir) / f'{task_partition_name}={part_name}'
+                part_name = batch.task or "__HIVE_DEFAULT_PARTITION__"
+                part_path = Path(outdir) / f"{task_partition_name}={part_name}"
                 part_path.mkdir(exist_ok=True)
-                outfile = part_path / f'{self.run_id}-{c}.parquet'
+                outfile = part_path / f"{self.run_id}-{c}.parquet"
             else:
-                outfile = Path(outdir) / f'{self.run_id}-{c}.parquet'
+                outfile = Path(outdir) / f"{self.run_id}-{c}.parquet"
             batch.data.to_parquet(outfile, index=False)

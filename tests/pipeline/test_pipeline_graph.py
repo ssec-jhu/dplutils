@@ -1,6 +1,8 @@
-import pytest
 from dataclasses import dataclass
-from dplutils.pipeline import PipelineTask, PipelineGraph
+
+import pytest
+
+from dplutils.pipeline import PipelineGraph, PipelineTask
 
 
 def make_graph_struct(edges, sources, sinks, simple=None):
@@ -9,29 +11,30 @@ def make_graph_struct(edges, sources, sinks, simple=None):
         edges: list[tuple]
         sources: list[PipelineTask]
         sinks: list[PipelineTask]
-        simple: list[PipelineTask]|None
+        simple: list[PipelineTask] | None
+
     return GraphInfo(edges, sources, sinks, simple)
 
 
 def graph_suite():
-    a = PipelineTask('a', 1)
-    b = PipelineTask('b', 2)
-    c = PipelineTask('c', 3)
-    d = PipelineTask('d', 4)
-    e = PipelineTask('e', 5)
-    f = PipelineTask('f', 6)
-    g = PipelineTask('g', 7)
+    a = PipelineTask("a", 1)
+    b = PipelineTask("b", 2)
+    c = PipelineTask("c", 3)
+    d = PipelineTask("d", 4)
+    e = PipelineTask("e", 5)
+    f = PipelineTask("f", 6)
+    g = PipelineTask("g", 7)
 
     return {
-        'simple': make_graph_struct([(a,b), (b,c), (c,d)], [a], [d], [a, b, c, d]),
-        'branched': make_graph_struct([(a,b), (b,c), (b,d), (c,e), (d,e)], [a], [e]),
-        'multisource': make_graph_struct([(a,c), (b,c), (c,d)], [a, b], [d]),
-        'multisink': make_graph_struct([(a,b), (b,c), (b,d)], [a], [c, d]),
-        'branchmulti': make_graph_struct([(a,c), (b,c), (c,d), (c,e), (d,f), (e,g)], [a,b], [f,g]),
+        "simple": make_graph_struct([(a, b), (b, c), (c, d)], [a], [d], [a, b, c, d]),
+        "branched": make_graph_struct([(a, b), (b, c), (b, d), (c, e), (d, e)], [a], [e]),
+        "multisource": make_graph_struct([(a, c), (b, c), (c, d)], [a, b], [d]),
+        "multisink": make_graph_struct([(a, b), (b, c), (b, d)], [a], [c, d]),
+        "branchmulti": make_graph_struct([(a, c), (b, c), (c, d), (c, e), (d, f), (e, g)], [a, b], [f, g]),
     }
 
 
-@pytest.mark.parametrize('graph_info', graph_suite().values())
+@pytest.mark.parametrize("graph_info", graph_suite().values())
 class TestGraph:
     def test_graph_instantiation(self, graph_info):
         PipelineGraph(graph_info.edges)
@@ -78,27 +81,27 @@ class TestGraph:
 
 
 def test_graph_walk_with_priority():
-    test = graph_suite()['branched']
+    test = graph_suite()["branched"]
     p = PipelineGraph(test.edges)
     walked = list(p.walk_back(sort_key=lambda x: x.func))
-    assert walked == [p.task_map[i] for i in ['e', 'c', 'd', 'b', 'a']]
+    assert walked == [p.task_map[i] for i in ["e", "c", "d", "b", "a"]]
     walked = list(p.walk_fwd(sort_key=lambda x: x.func))
-    assert walked == [p.task_map[i] for i in ['a', 'b', 'c', 'd', 'e']]
+    assert walked == [p.task_map[i] for i in ["a", "b", "c", "d", "e"]]
     # now reverse order
     walked = list(p.walk_back(sort_key=lambda x: -x.func))
-    assert walked == [p.task_map[i] for i in ['e', 'd', 'c', 'b', 'a']]
+    assert walked == [p.task_map[i] for i in ["e", "d", "c", "b", "a"]]
     walked = list(p.walk_fwd(sort_key=lambda x: -x.func))
-    assert walked == [p.task_map[i] for i in ['a', 'b', 'd', 'c', 'e']]
+    assert walked == [p.task_map[i] for i in ["a", "b", "d", "c", "e"]]
 
 
 def test_single_node_graph_to_list():
-    t = PipelineTask('t', 1)
+    t = PipelineTask("t", 1)
     p = PipelineGraph([t])
     assert p.to_list() == [t]
 
 
 def test_graph_instantiation_raises_for_cycles():
-    a = PipelineTask('a', 1)
-    b = PipelineTask('b', 1)
+    a = PipelineTask("a", 1)
+    b = PipelineTask("b", 1)
     with pytest.raises(ValueError):
-        PipelineGraph([(a, b), (b,a)])
+        PipelineGraph([(a, b), (b, a)])

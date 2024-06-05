@@ -1,5 +1,6 @@
 import json
 from argparse import ArgumentParser, Namespace
+
 from dplutils.pipeline import PipelineExecutor
 
 
@@ -16,9 +17,9 @@ def add_generic_args(argparser):
         argparser: The :class:`ArgumentParser<argparse.ArgumentParser>` instance
           to add args to.
     """
-    argparser.add_argument('-c', '--set-context', action='append', default=[], help='set context parameter')
-    argparser.add_argument('-s', '--set-config', action='append', default=[], help='set configuration parameter')
-    argparser.add_argument('-o', '--out-dir', default='.', help='write results to directory')
+    argparser.add_argument("-c", "--set-context", action="append", default=[], help="set context parameter")
+    argparser.add_argument("-s", "--set-config", action="append", default=[], help="set configuration parameter")
+    argparser.add_argument("-o", "--out-dir", default=".", help="write results to directory")
 
 
 def get_argparser(**kwargs):
@@ -40,7 +41,7 @@ def get_argparser(**kwargs):
 
 
 def parse_config_element(conf):
-    k,v = conf.split('=', 1)
+    k, v = conf.split("=", 1)
     try:
         v = json.loads(v)
     except json.decoder.JSONDecodeError:
@@ -67,7 +68,7 @@ def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
         pipeline.set_config(*parse_config_element(conf))
 
 
-def cli_run(pipeline: PipelineExecutor, args: Namespace|None = None,  **argparse_kwargs):
+def cli_run(pipeline: PipelineExecutor, args: Namespace | None = None, **argparse_kwargs):
     """Run pipeline from cli args
 
     If ``args`` is None, this function runs the pipeline for the standard set of
