@@ -47,6 +47,11 @@ def dummy_steps():
 
 
 @pytest.fixture
+def blackhole_step():
+    return [PipelineTask("blackhole", func=lambda x: pd.DataFrame([]))]
+
+
+@pytest.fixture
 def dummy_pipeline_graph():
     t1 = PipelineTask("task1", lambda x: x.assign(t1="1"))
     t2A = PipelineTask("task2A", lambda x: x.assign(t2A="2A"))

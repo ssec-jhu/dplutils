@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from dplutils.pipeline import OutputBatch
+from dplutils.pipeline.task import PipelineTask
 
 
 @pytest.mark.parametrize("max_batches", (1, 4, 10))
@@ -21,6 +22,29 @@ class PipelineExecutorTestSuite:
                 assert res.task == "task2"
                 assert isinstance(res.data, pd.DataFrame)
                 assert set(res.data.columns).issuperset({"id", "step1", "step2"})
+
+    def test_pipeline_throws_away_empty_batches(self, blackhole_step, max_batches, tmp_path):
+        # Flag to ensure that subsequent tasks are not called on empty batches. This is useful
+        # since the check of yielded results only checks output of pipeline, we want to ensure tasks
+        # don't needlessly get called as well. Flag implemented with file so it is more portable
+        # for subprocess calls (e.g. used in ray)
+        flag_file = tmp_path / "called.flag"
+
+        def set_counter(x):
+            flag_file.write_text("")
+            return x
+
+        # first ensure operation of our counter instrument
+        pl = self.executor([PipelineTask("nocalls", set_counter)], max_batches=max_batches)
+        res = list(pl.run())
+        assert len(res) == max_batches
+        assert flag_file.exists()
+        # now ensure we toss empty dataframes
+        flag_file.unlink()
+        pl = self.executor([*blackhole_step, PipelineTask("nocalls", set_counter)], max_batches=max_batches)
+        res = list(pl.run())
+        assert len(res) == 0
+        assert not flag_file.exists()
 
     def test_run_dag_pipeline(self, dummy_pipeline_graph, max_batches):
         pl = self.executor(dummy_pipeline_graph, max_batches=max_batches)

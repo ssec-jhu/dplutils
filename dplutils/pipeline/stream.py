@@ -124,6 +124,8 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         for task in self.stream_graph.walk_fwd():
             for ready in deque_extract(task.pending, self.is_task_ready):
                 block_info = self.task_resolve_output(ready)
+                if block_info.length == 0:
+                    continue
                 if task in self.stream_graph.sink_tasks:
                     return OutputBatch(block_info.data, task=task.name)
                 else:
