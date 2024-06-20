@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
-from dplutils.pipeline.utils import deque_extract
+from dplutils.pipeline.utils import deque_extract, split_dataframe
 
 
 @dataclass
@@ -310,7 +310,7 @@ class LocalSerialExecutor(StreamingGraphExecutor):
 
     def split_batch_submit(self, stream_batch, max_rows):
         df = stream_batch.data
-        return np.array_split(df, np.ceil(len(df) / max_rows))
+        return split_dataframe(df, max_rows=max_rows)
 
     def task_resolve_output(self, to):
         if isinstance(to, list):
