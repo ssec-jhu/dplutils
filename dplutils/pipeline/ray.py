@@ -10,6 +10,7 @@ import ray
 from dplutils import observer
 from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
 from dplutils.pipeline.stream import StreamBatch, StreamingGraphExecutor
+from dplutils.pipeline.utils import split_dataframe
 
 
 def set_run_id(inputs, run_id):
@@ -31,7 +32,7 @@ def get_remote_wrapper(task: PipelineTask, context: dict):
         if task.batch_size is None:
             return funcwrapper(indf, **kwargs)
 
-        splits = np.array_split(indf, np.ceil(len(indf) / task.batch_size))
+        splits = split_dataframe(indf, max_rows=task.batch_size)
         refs = [
             ray.remote(funcwrapper)
             .options(
@@ -123,7 +124,7 @@ def get_stream_wrapper(task: PipelineTask, context: dict):
 
 
 def stream_split_func(df, splits):
-    splits = np.array_split(df, splits)
+    splits = split_dataframe(df, num_splits=splits)
     return [len(i) for i in splits] + splits
 
 
