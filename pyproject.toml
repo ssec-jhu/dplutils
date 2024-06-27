@@ -10,9 +10,9 @@ license = {file = "LICENSE"}
 
 requires-python = ">=3.10,<3.12"  # prob can relax the lower limit...
 dependencies = [
-    "pandas<2.2",  # due to ray, track at: https://github.com/ray-project/ray/issues/42842
+    "pandas",
     "numpy",
-    "ray[data]",
+    "ray[data]>=2.10",
     "pyarrow",
     "networkx",
 ]
