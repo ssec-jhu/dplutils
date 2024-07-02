@@ -1,13 +1,17 @@
+import os
+import uuid
+from collections import defaultdict
 from concurrent.futures import wait
 from dataclasses import dataclass
-import os
+from pathlib import Path
 from typing import Any
-import uuid
+
 import cloudpickle
 import numpy as np
 import pandas as pd
 import parsl
 from parsl.dataflow.futures import AppFuture
+
 from dplutils.pipeline.stream import StreamBatch, StreamingGraphExecutor
 from dplutils.pipeline.task import PipelineTask
 from dplutils.pipeline.utils import split_dataframe
@@ -16,6 +20,7 @@ from dplutils.pipeline.utils import split_dataframe
 def _get_app_wrapper(task, ctx):
     pickled = cloudpickle.dumps(task.func)
     kwargs = task.resolve_kwargs(ctx)
+
     def wrapper(inputs, outputs):
         # convert inputs from file(s) (parquet) to df
         func = cloudpickle.loads(pickled)
@@ -24,6 +29,7 @@ def _get_app_wrapper(task, ctx):
         # write out to parquet in outputs[0]
         out_df.to_parquet(outputs[0])
         return len(out_df)
+
     return parsl.python_app(wrapper)
 
 
@@ -36,6 +42,30 @@ def splitter(inputs, outputs):
     return [len(i) for i in df_splits]
 
 
+class ParslSharedStorageStagingProvider:
+    def __init__(self, rootpath):
+        self.rootpath = Path(rootpath)
+        self.refcounter = defaultdict(int)
+
+    def get(self, tag):
+        filename = str(self.rootpath / f"_dpl_parsl-{tag}-{uuid.uuid1()}.par")
+        self.refcounter[filename] = 0
+        return parsl.File(filename)
+
+    def incr(self, file):
+        if isinstance(file, parsl.File):
+            file = file.path
+        self.refcounter[file] += 1
+
+    def decr(self, file):
+        if isinstance(file, parsl.File):
+            file = file.path
+        self.refcounter[file] -= 1
+        if self.refcounter[file] <= 0:
+            os.unlink(file)
+            del self.refcounter[file]
+
+
 @dataclass
 class ParslTracker:
     future: AppFuture
@@ -44,15 +74,20 @@ class ParslTracker:
 
 
 class ParslHTStreamExecutor(StreamingGraphExecutor):
+    def __init__(self, *args, staging_root=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.staging_root = staging_root or os.getcwd()
+
     def _setup_remotes(self):
-        self.remotes = {
-            name: _get_app_wrapper(task, self.ctx) for name, task in self.tasks_idx.items()
-        }
+        self.remotes = {name: _get_app_wrapper(task, self.ctx) for name, task in self.tasks_idx.items()}
 
     def execute(self):
+        self.filestager = ParslSharedStorageStagingProvider(self.staging_root)
         self._setup_remotes()
         for batch in super().execute():
-            batch.data = pd.read_parquet(batch.data[0])
+            out_file = batch.data[0]
+            batch.data = pd.read_parquet(out_file)
+            self.filestager.decr(out_file)
             yield batch
 
     def task_submittable(self, task: PipelineTask, rank: int) -> bool:
@@ -62,18 +97,18 @@ class ParslHTStreamExecutor(StreamingGraphExecutor):
         return executor.outstanding <= executor.connected_workers
 
     def task_submit(self, task: PipelineTask, df_list: list[parsl.File]) -> Any:
-        out_file = parsl.File(f"_dpl_parsl_-{task.name}-out-{uuid.uuid1()}.par")
+        out_file = self.filestager.get(task.name)
         inputs = []
         for i, df in enumerate(df_list):
-            print(f'processing submission from df_list, {i}: {df}')
             if isinstance(df, pd.DataFrame):
-                fname = f"_dpl_parsl_-source-{i}-{uuid.uuid1()}.par"
-                df.to_parquet(fname)
-                df = parsl.File(fname)
-                inputs.append(df)
+                file = self.filestager.get(f"source-{i}")
+                df.to_parquet(file.path)
+                inputs.append(file)
             else:
                 inputs.extend(df)
         app_future = self.remotes[task.name](inputs=inputs, outputs=[out_file])
+        for f in inputs:
+            self.filestager.incr(f)
         return ParslTracker(future=app_future, inputs=inputs, outputs=[out_file])
 
     def is_task_ready(self, pending_task: Any) -> bool:
@@ -81,14 +116,16 @@ class ParslHTStreamExecutor(StreamingGraphExecutor):
 
     def task_resolve_output(self, pending_task: Any) -> StreamBatch:
         result = pending_task.future.result()
+        for f in pending_task.inputs:
+            self.filestager.decr(f)
         if len(pending_task.outputs) > 1:
-            return [StreamBatch(length=result[i], data=[o]) for i,o in enumerate(pending_task.outputs)]
+            return [StreamBatch(length=result[i], data=[o]) for i, o in enumerate(pending_task.outputs)]
         return StreamBatch(length=result, data=pending_task.outputs)
 
     def split_batch_submit(self, batch: StreamBatch, max_rows: int) -> Any:
         # need to know the number of output files up front
         n_out = int(np.ceil(batch.length / max_rows))
-        outputs = [parsl.File(f"_dpl_parsl_-split-{i}-{uuid.uuid1()}.par") for i in range(n_out)]
+        outputs = [self.filestager.get("split-{i}") for i in range(n_out)]
         app_future = splitter(inputs=batch.data, outputs=outputs)
         return ParslTracker(future=app_future, inputs=batch.data, outputs=outputs)
 

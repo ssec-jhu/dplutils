@@ -1,19 +1,22 @@
 import os
 import sys
-import pytest
+
 import parsl
+import pytest
+from parsl.channels import LocalChannel
 from parsl.configs import htex_local
 from parsl.providers import LocalProvider
-from parsl.channels import LocalChannel
-from dplutils.pipeline.task import PipelineTask
 from test_suite import PipelineExecutorTestSuite
+
 from dplutils.pipeline.parsl import ParslHTStreamExecutor
+from dplutils.pipeline.task import PipelineTask
 
 
 @pytest.fixture(scope="session", autouse=True)
 def parsl_session(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp('intermediate_files')
+    tmp = tmp_path_factory.mktemp("intermediate_files")
     os.chdir(tmp)
+    os.environ["PATH"] = sys.exec_prefix + "/bin/:" + os.environ["PATH"]
     config = parsl.Config(
         executors=[
             parsl.HighThroughputExecutor(
