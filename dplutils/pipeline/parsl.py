@@ -131,4 +131,4 @@ class ParslHTStreamExecutor(StreamingGraphExecutor):
 
     def poll_tasks(self, pending_task_list: list[Any]) -> None:
         futures = [i.future for i in pending_task_list]
-        wait(futures, timeout=10)
+        wait(futures, timeout=10, return_when="FIRST_COMPLETED")
