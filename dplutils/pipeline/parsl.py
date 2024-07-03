@@ -52,18 +52,14 @@ class ParslSharedStorageStagingProvider:
         self.refcounter[filename] = 0
         return parsl.File(filename)
 
-    def incr(self, file):
-        if isinstance(file, parsl.File):
-            file = file.path
-        self.refcounter[file] += 1
+    def incr(self, file, n=1):
+        self.refcounter[file.path] += n
 
-    def decr(self, file):
-        if isinstance(file, parsl.File):
-            file = file.path
-        self.refcounter[file] -= 1
-        if self.refcounter[file] <= 0:
-            os.unlink(file)
-            del self.refcounter[file]
+    def decr(self, file, n=1):
+        self.refcounter[file.path] -= n
+        if self.refcounter[file.path] <= 0:
+            os.unlink(file.path)
+            del self.refcounter[file.path]
 
 
 @dataclass
@@ -71,6 +67,7 @@ class ParslTracker:
     future: AppFuture
     inputs: list[parsl.File]
     outputs: list[parsl.File]
+    task: PipelineTask | None = None
 
 
 class ParslHTStreamExecutor(StreamingGraphExecutor):
@@ -102,14 +99,13 @@ class ParslHTStreamExecutor(StreamingGraphExecutor):
         for i, df in enumerate(df_list):
             if isinstance(df, pd.DataFrame):
                 file = self.filestager.get(f"source-{i}")
+                self.filestager.incr(file)
                 df.to_parquet(file.path)
                 inputs.append(file)
             else:
                 inputs.extend(df)
         app_future = self.remotes[task.name](inputs=inputs, outputs=[out_file])
-        for f in inputs:
-            self.filestager.incr(f)
-        return ParslTracker(future=app_future, inputs=inputs, outputs=[out_file])
+        return ParslTracker(future=app_future, inputs=inputs, outputs=[out_file], task=task)
 
     def is_task_ready(self, pending_task: Any) -> bool:
         return pending_task.future.done()
@@ -118,6 +114,9 @@ class ParslHTStreamExecutor(StreamingGraphExecutor):
         result = pending_task.future.result()
         for f in pending_task.inputs:
             self.filestager.decr(f)
+        for f in pending_task.outputs:
+            n_deps = 1 if pending_task.task is None else self.graph.out_degree(pending_task.task)
+            self.filestager.incr(f, n=n_deps)
         if len(pending_task.outputs) > 1:
             return [StreamBatch(length=result[i], data=[o]) for i, o in enumerate(pending_task.outputs)]
         return StreamBatch(length=result, data=pending_task.outputs)

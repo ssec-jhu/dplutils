@@ -1,15 +1,14 @@
 import os
 import sys
+from glob import glob
 
 import parsl
 import pytest
 from parsl.channels import LocalChannel
-from parsl.configs import htex_local
 from parsl.providers import LocalProvider
 from test_suite import PipelineExecutorTestSuite
 
 from dplutils.pipeline.parsl import ParslHTStreamExecutor
-from dplutils.pipeline.task import PipelineTask
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,6 +32,20 @@ def parsl_session(tmp_path_factory):
     )
     config.executors[0].launch_cmd = sys.exec_prefix + "/bin/" + config.executors[0].launch_cmd
     parsl.load(config)
+
+
+def test_parsl_file_cleanup(dummy_pipeline_graph, tmp_path):
+    def n_staging_files():
+        return len(glob(str(tmp_path / "_dpl_parsl-*.par")))
+
+    assert n_staging_files() == 0
+    it = ParslHTStreamExecutor(dummy_pipeline_graph, max_batches=10, staging_root=tmp_path).run()
+    out = [next(it)]
+    assert n_staging_files() > 0
+    out += list(it)
+    assert len(out) == 20
+    # there should be no intermediate files
+    assert n_staging_files() == 0
 
 
 class TestParslExecutor(PipelineExecutorTestSuite):
