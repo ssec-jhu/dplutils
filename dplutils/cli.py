@@ -17,6 +17,7 @@ def add_generic_args(argparser):
         argparser: The :class:`ArgumentParser<argparse.ArgumentParser>` instance
           to add args to.
     """
+    argparser.add_argument("-f", "--file", default=None, help="path of yaml pipeline config file")
     argparser.add_argument("-c", "--set-context", action="append", default=[], help="set context parameter")
     argparser.add_argument("-s", "--set-config", action="append", default=[], help="set configuration parameter")
     argparser.add_argument("-o", "--out-dir", default=".", help="write results to directory")
@@ -52,9 +53,11 @@ def parse_config_element(conf):
 def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
     """Configure pipeline using config from arguments
 
-    Set context from the ``set-context`` argument and config from
-    ``set-config``. Each will be parset as ``name=value`` pair, where the value
-    is parsed as a JSON object, falling back to string.
+    Set context from the ``set-context`` argument and config from ``set-config``
+    and both from config file given in ``file``. Config file will be applied
+    first so that specific context and config settings on the command line will
+    override settings in the file. Each will be parsed as  ``name=value`` pair,
+    where the value is parsed as a JSON object, falling back to string.
 
     For ``set-config``, the ``name`` is of the form
     ``task.param[.subparam[...]]`` where ``task`` is the taskname, ``param`` is
@@ -62,6 +65,8 @@ def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
     and ``subparam`` is a key within a dictionary of such a parameter (where
     applicable).
     """
+    if args.file is not None:
+        pipeline.set_config(from_yaml=args.file)
     for ctx in args.set_context:
         pipeline.set_context(*parse_config_element(ctx))
     for conf in args.set_config:

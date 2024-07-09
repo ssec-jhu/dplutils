@@ -88,14 +88,22 @@ class PipelineExecutor(ABC):
                   config in ``from_yaml``
             value: If a coord is specified as a string, this is the value to set
                 the parameter at those coordinates
-            from_yaml: A yaml file containing task parameters to set. This
-                should have the same structure as a dict supplied to ``coord``.
+            from_yaml: A yaml file containing task parameters to set. Context
+                will be set from the keys under the ``context:`` section (if
+                present) and task config from ``config:`` (if present), where
+                data therein should have the same structure as a dict supplied
+                to ``coord``.
         """
         if coord is None:
             if from_yaml is None:
                 raise ValueError("one of dict/string coordinate and value/file input is required")
             with open(from_yaml, "r") as f:
-                return self.set_config_from_dict(yaml.load(f, yaml.SafeLoader))
+                full_config = yaml.safe_load(f)
+                if full_config is None or not isinstance(full_config, dict):
+                    return self
+                self.ctx.update(full_config.get("context", {}))
+                self.set_config_from_dict(full_config.get("config", {}))
+                return self
         if isinstance(coord, dict):
             return self.set_config_from_dict(coord)
 
