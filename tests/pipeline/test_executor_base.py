@@ -1,3 +1,5 @@
+from textwrap import dedent
+
 import pandas as pd
 import pytest
 
@@ -28,7 +30,8 @@ def test_pipeline_executor_set_config_from_coord(dummy_executor):
 
 def test_pipeline_executor_set_config_from_file(dummy_executor, tmp_path):
     config_file = tmp_path / "config.yaml"
-    config_file.write_text("""
+    config_file.write_text(
+        dedent("""
     context:
         testcontext: ctxvalue
     config:
@@ -37,6 +40,7 @@ def test_pipeline_executor_set_config_from_file(dummy_executor, tmp_path):
         kwargs:
           test: 1
     """)
+    )
     assert dummy_executor.tasks_idx["task1"].num_gpus != 1
     assert dummy_executor.tasks_idx["task1"].kwargs != {"test": 1}
     assert "testcontext" not in dummy_executor.ctx
