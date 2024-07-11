@@ -9,6 +9,7 @@ def add_generic_args(argparser):
 
     The generic set of CLI arguments are as follows:
 
+        - ``-f`` (``--file``): set configuration and context from specified yaml file.
         - ``-c`` (``--set-context``): Set pipline context item.
         - ``-s`` (``--set-config``): Set pipline config item.
         - ``-o`` (``--out-dir``): Directory to write output files to.
