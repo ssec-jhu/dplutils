@@ -136,39 +136,41 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 task.data_in.extendleft(self.task_resolve_output(ready))
         return None
 
-    def process_source(self, source):
-        source_batch = []
-        for _ in range(source.task.batch_size or 1):
+    def _feed_source(self, source):
+        if self.source_exhausted:
+            return
+        total_length = sum(i.length for i in source.data_in)
+        while total_length < (source.task.batch_size or 1):
             try:
-                source_batch.append(next(self.source_generator))
+                next_df = next(self.source_generator)
             except StopIteration:
                 self.source_exhausted = True
-                if len(source_batch) == 0:
-                    return
                 break
+            # We feed any generated source to all source tasks similar the way
+            # upstream forked outputs broadcast. We add to data_in so that any
+            # necessary batching and splitting can be handled by normal procedure.
+            for task in self.stream_graph.source_tasks:
+                task.data_in.append(StreamBatch(data=next_df, length=len(next_df)))
             self.n_sourced += 1
             if self.n_sourced == self.max_batches:
                 self.source_exhausted = True
                 break
-        source.pending.appendleft(self.task_submit(source.task, source_batch))
-        source.counter += 1
-        return
+            total_length += len(next_df)
 
     def enqueue_tasks(self):
         # Work through the graph in reverse order, submitting any tasks as
         # needed. Reverse order ensures we prefer to send tasks that are closer
         # to the end of the pipeline and only feed as necessary.
-        rank = 0
-        for task in self.stream_graph.walk_back(sort_key=lambda x: x.counter):
-            if task in self.stream_graph.source_tasks or len(task.data_in) == 0:
-                continue
+        def _handle_one_task(task, rank):
+            eligible = submitted = False
+            if len(task.data_in) == 0:
+                return (eligible, submitted)
 
             batch_size = task.task.batch_size
             if batch_size is not None:
                 for batch in deque_extract(task.data_in, lambda b: b.length > batch_size):
                     task.split_pending.appendleft(self.split_batch_submit(batch, batch_size))
 
-            eligible = False
             while len(task.data_in) > 0:
                 num_to_merge = deque_num_merge(task.data_in, batch_size)
                 if num_to_merge == 0:
@@ -184,18 +186,29 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 merged = [task.data_in.pop().data for i in range(num_to_merge)]
                 task.pending.appendleft(self.task_submit(task.task, merged))
                 task.counter += 1
+                submitted = True
+            return (eligible, submitted)
 
+        # proceed through all non-source tasks, which will be handled separately
+        # below due to the need to feed from generator.
+        rank = 0
+        for task in self.stream_graph.walk_back(sort_key=lambda x: x.counter):
+            if task in self.stream_graph.source_tasks:
+                continue
+            eligible, _ = _handle_one_task(task, rank)
             if eligible:  # update rank of this task if it _could_ be done, whether or not it was
                 rank += 1
 
-        # in least-run order try to enqueue as many of the source tasks as can fit
+        # Source as many inputs as can fit on source tasks. We prioritize flushing the
+        # input queue and secondarily on number of invocations in case batch sizes differ.
         while True:
             task_scheduled = False
-            for source in sorted(self.stream_graph.source_tasks, key=lambda x: x.counter):
-                if self.source_exhausted or not self.task_submittable(source.task, rank):
-                    continue
-                self.process_source(source)
-                task_scheduled = True
+            for task in sorted(self.stream_graph.source_tasks, key=lambda x: (-len(x.data_in), x.counter)):
+                if self.task_submittable(task.task, rank):
+                    self._feed_source(task)
+                    _, task_scheduled = _handle_one_task(task, rank)
+                    if task_scheduled:  # we want to re-evalute the sort order
+                        break
             if not task_scheduled:
                 break
 

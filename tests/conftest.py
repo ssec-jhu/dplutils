@@ -69,6 +69,14 @@ def multi_output_graph():
 
 
 @pytest.fixture
+def multi_source_graph():
+    t1A = PipelineTask("srcA", lambda x: x.assign(a="A"))
+    t1B = PipelineTask("srcB", lambda x: x.assign(b="B"))
+    t2 = PipelineTask("sink", lambda x: x.assign(sink="sink"))
+    return PipelineGraph([(t1A, t2), (t1B, t2)])
+
+
+@pytest.fixture
 def graph_suite(dummy_steps, dummy_pipeline_graph, multi_output_graph):
     return {
         "dummy_steps": dummy_steps,

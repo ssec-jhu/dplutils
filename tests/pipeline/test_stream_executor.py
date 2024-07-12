@@ -62,3 +62,18 @@ def test_stream_executor_exhausts_input_when_source_batchsize_larger_than_input(
     else:
         # do not submit empty source batches
         assert len(res) == 0
+
+
+def test_stream_executor_input_batch_size_splits(dummy_steps):
+    def generator():
+        for i in range(4):
+            yield pd.DataFrame({"col": range(2)})
+
+    # sanity check to ensure below test is actually inspect the split action
+    pl = LocalSerialExecutor(dummy_steps, generator=generator)
+    res = [i.data for i in pl.run()]
+    assert len(res) == 4
+    # explicitly set batch size so we should call split on each input
+    pl = LocalSerialExecutor(dummy_steps, generator=generator).set_config("task1.batch_size", 1)
+    res = [i.data for i in pl.run()]
+    assert len(res) == 8
