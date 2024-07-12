@@ -1,3 +1,5 @@
+from textwrap import dedent
+
 import pytest
 
 from dplutils import cli
@@ -34,18 +36,50 @@ def test_pipeline_set_config_from_args_no_args(monkeypatch, dummy_executor):
     cli.set_config_from_args(dummy_executor, cli.get_argparser().parse_args())
 
 
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        "",
+        "---\n",
+        "context:\n  ctx: val\n",  # partial empty
+        "nocontextorconfig: 1",
+        "plainstringvalue",
+    ],
+)
+def test_pipeline_set_config_empty_valid_file(config_text, monkeypatch, dummy_executor, tmp_path):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(config_text)
+    monkeypatch.setattr("sys.argv", ["", "-f", str(config_file)])
+    cli.set_config_from_args(dummy_executor, cli.get_argparser().parse_args())
+
+
 def test_run_with_cli_helper(monkeypatch, dummy_executor, tmp_path):
     assert len(list(tmp_path.glob("*.parquet"))) == 0
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        dedent("""
+    context:
+      ctxvar: fileval  # for testing override
+      ctxfilevar: ctxfileval
+    config:
+      task1:
+        num_cpus: 100  # for testing override
+      task_kw:
+        num_cpus: 0.5
+    """)
+    )
     monkeypatch.setattr(
         "sys.argv",
         [
             "",
             "-o",
             str(tmp_path),
+            "-f",
+            str(config_file),
             "--set-context",
             "ctxvar=value",
             "--set-config",
-            "task1.num_cpus=2",
+            "task1.num_cpus=0.5",
             "--set-config",
             "task1.batch_size=10",
             "--set-config",
@@ -62,8 +96,10 @@ def test_run_with_cli_helper(monkeypatch, dummy_executor, tmp_path):
     dummy_executor.graph.add_edge(dummy_executor.graph.task_map["task2"], PipelineTask("task_kw", task_with_kwargs))
     cli.cli_run(dummy_executor)
     assert dummy_executor.ctx["ctxvar"] == "value"
-    assert dummy_executor.tasks_idx["task1"].num_cpus == 2
+    assert dummy_executor.ctx["ctxfilevar"] == "ctxfileval"
+    assert dummy_executor.tasks_idx["task1"].num_cpus == 0.5
     assert dummy_executor.tasks_idx["task1"].batch_size == 10
     assert dummy_executor.tasks_idx["task_kw"].kwargs["a"] == [1, 2]
     assert dummy_executor.tasks_idx["task_kw"].kwargs["b"] == 99
+    assert dummy_executor.tasks_idx["task_kw"].num_cpus == 0.5
     assert len(list(tmp_path.glob("*.parquet"))) == 10
