@@ -40,5 +40,19 @@ def test_pipeline_task_check_kwargs_from_context(generic_task_with_required):
 
 
 def test_pipeline_task_check_kwargs_from_context_raises_with_missing(generic_task_with_required):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="expected from context"):
         generic_task_with_required(context_kwargs={"required": "ctx_required"}).validate({})
+
+
+def test_pipeline_task_with_starkwargs_argument_allows_any(generic_task_with_starkwargs):
+    generic_task_with_starkwargs(kwargs={"some_kwarg": 1}).validate({})
+
+
+def test_pipeline_task_with_first_arg_as_kwarg_raises(generic_task_with_starkwargs):
+    with pytest.raises(ValueError, match="first position argument reserved"):
+        generic_task_with_starkwargs(kwargs={"dataframe": 1}).validate({})
+
+
+def test_pipeline_task_with_multiple_position_only_raises(generic_task_with_position_only):
+    with pytest.raises(ValueError, match="only one positional only"):
+        generic_task_with_position_only().validate({})

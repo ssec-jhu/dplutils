@@ -1,6 +1,6 @@
+import inspect
 from copy import copy
 from dataclasses import dataclass, field, replace
-from inspect import _empty, signature
 from typing import Any, Callable
 
 import pandas as pd
@@ -77,17 +77,28 @@ class PipelineTask:
         """
         all_kwargs = self.resolve_kwargs(context)
         # we expect a dataframe as the first argument, so skip validation for that
-        params = list(signature(self.func).parameters.items())[1:]
+        params = list(inspect.signature(self.func).parameters.items())[1:]
+        # Because the signature and params therein do not indicate varadics, we have to
+        # consult getfullargspec for those. Similarly, since fullargspec doesn't indicate
+        # positional only, we utilize both.
+        argspec = inspect.getfullargspec(self.func)
+        if argspec.args[0] in all_kwargs:
+            raise ValueError("first position argument reserved for input dataframe but found in kwargs")
         for key, param in params:
-            if param.default == _empty:
+            if param.name in [argspec.varargs, argspec.varkw]:
+                continue
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                raise ValueError(f"only one positional only argument supported, found also {param.name}")
+            if param.default == inspect._empty:
                 if key not in all_kwargs:
                     msg = f"missing required argument {key} for task {self.name}"
                     if key in self.context_kwargs:
                         msg = f"{msg} - expected from context {self.context_kwargs[key]}"
                     raise ValueError(msg)
-        extra = set(all_kwargs.keys()) - {k for k, v in params}
-        if len(extra) > 0:
-            raise ValueError(f"unkown arguments {extra} for task {self.name}")
+        if not argspec.varkw:
+            extra = set(all_kwargs.keys()) - {k for k, v in params}
+            if len(extra) > 0:
+                raise ValueError(f"unkown arguments {extra} for task {self.name}")
 
     def __hash__(self):
         return hash(self.name)
