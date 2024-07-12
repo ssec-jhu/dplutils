@@ -102,5 +102,21 @@ def generic_task_with_required():
 
 
 @pytest.fixture
+def generic_task_with_starkwargs():
+    def func(dataframe, **kwargs):
+        pass
+
+    return PipelineTask("name", func)
+
+
+@pytest.fixture
+def generic_task_with_position_only():
+    def func(dataframe, position_only, /):
+        pass
+
+    return PipelineTask("name", func)
+
+
+@pytest.fixture
 def dummy_executor(dummy_steps):
     return DummyExecutor(graph=dummy_steps)
