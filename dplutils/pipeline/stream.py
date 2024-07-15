@@ -65,8 +65,10 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
           to the input task(s). Default is None, which means either exhaust the
           source generator or run indefinitely.
         generator: A callable that when called returns a generator which yields
-          dataframes. The yielded dataframes are assumed to be a single row, in
-          which case input task batching will be honored.
+          dataframes. The driver will call ``len()`` on the yielded dataframes to
+          obtain the number of rows and will split and batch according to the input
+          task settings. Each generated dataframe, regardless of size, counts as
+          a single source batch with respect to ``max_batches``.
 
 
     Implementations must override abstract methods for (remote) task submission
