@@ -1,3 +1,5 @@
+from math import ceil
+
 import pandas as pd
 import pytest
 
@@ -105,3 +107,14 @@ class PipelineExecutorTestSuite:
         assert all([len(i.data) == expected_len for i in res])
         final = pd.concat([i.data for i in res])
         assert final["id"].nunique() == max_batches
+
+    def test_all_sources_get_each_input_and_batch(self, multi_source_graph, max_batches):
+        pl = self.executor(multi_source_graph, max_batches=max_batches).set_config("srcA.batch_size", 4)
+        res = list(pl.run())
+        expected_len = max_batches + ceil(max_batches / 4)
+        assert len(res) == expected_len
+        # now ensure that each source task got same set of batches
+        final = pd.concat([i.data for i in res])
+        idset_a = set(final[final.a == "A"].id)
+        idset_b = set(final[final.b == "B"].id)
+        assert idset_a == idset_b == set(range(max_batches))
