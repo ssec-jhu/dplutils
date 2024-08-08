@@ -28,7 +28,6 @@ dev = [
 ]
 docs = [
     "sphinx",
-    "sphinx_rtd_theme",
     "sphinx_book_theme",
     "sphinx-automodapi",
     "sphinx-issues",
