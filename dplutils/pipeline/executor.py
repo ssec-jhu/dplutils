@@ -1,3 +1,4 @@
+import itertools
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -45,6 +46,20 @@ class PipelineExecutor(ABC):
     @property
     def tasks_idx(self):  # for back compat
         return self.graph.task_map
+
+    def describe(self) -> str:
+        desc = "Tasks:\n" + "\n".join([f"  - {task}" for task in self.graph]) + "\n"
+        required_context = set(itertools.chain.from_iterable(task.context_kwargs.keys() for task in self.graph)).union(
+            self.ctx.keys()
+        )
+        if required_context:
+            desc += "Required context:\n"
+            for key in sorted(required_context):
+                desc += f"  - {key}"
+                if key in self.ctx:
+                    desc += f" (set to {self.ctx[key]})"
+                desc += "\n"
+        return desc
 
     def set_context(self, key, value) -> "PipelineExecutor":
         self.ctx[key] = value
