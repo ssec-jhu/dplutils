@@ -111,5 +111,5 @@ def test_cli_pipeline_info(monkeypatch, tmp_path, dummy_executor):
     sio = StringIO()
     monkeypatch.setattr("sys.stdout", sio)
     cli.cli_run(dummy_executor)
-    assert sio.getvalue().strip() == dummy_executor.describe().strip()
+    assert dummy_executor.describe() in sio.getvalue()
     assert len(list(tmp_path.glob("*.parquet"))) == 0
