@@ -39,15 +39,7 @@ class PipelineExecutor(ABC):
         self.ctx = {}
         self._run_id = None
 
-    @classmethod
-    def from_graph(cls, graph: PipelineGraph) -> "PipelineExecutor":
-        return cls(graph)
-
-    @property
-    def tasks_idx(self):  # for back compat
-        return self.graph.task_map
-
-    def describe(self) -> str:
+    def __str__(self) -> str:
         desc = "Tasks:\n" + "\n".join([f"  - {task}" for task in self.graph]) + "\n"
         required_context = set(itertools.chain.from_iterable(task.context_kwargs.keys() for task in self.graph)).union(
             self.ctx.keys()
@@ -60,6 +52,14 @@ class PipelineExecutor(ABC):
                     desc += f" (set to {self.ctx[key]})"
                 desc += "\n"
         return desc
+
+    @classmethod
+    def from_graph(cls, graph: PipelineGraph) -> "PipelineExecutor":
+        return cls(graph)
+
+    @property
+    def tasks_idx(self):  # for back compat
+        return self.graph.task_map
 
     def set_context(self, key, value) -> "PipelineExecutor":
         self.ctx[key] = value

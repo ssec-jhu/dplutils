@@ -99,7 +99,7 @@ def cli_run(pipeline: PipelineExecutor, args: Namespace | None = None, **argpars
         args = get_argparser(**argparse_kwargs).parse_args()
     set_config_from_args(pipeline, args)
     if args.info:
-        print(pipeline.describe())
+        print(pipeline)
         print("Set task parameters with --set-config, context with --set-context")
         print("See --help for more options")
         return

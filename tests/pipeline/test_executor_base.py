@@ -93,16 +93,16 @@ def test_validate_records_and_raises_errors(dummy_executor):
 
 
 def test_executor_describe(dummy_executor):
-    description = dummy_executor.describe()
+    description = str(dummy_executor)
     assert "task1" in description
     assert "task2" in description
     assert "Required context" not in description
     # add in context to test representation for that, render only when context is required by a task
     dummy_executor.tasks_idx["task1"].context_kwargs = {"testcontext": "test"}
-    description = dummy_executor.describe()
+    description = str(dummy_executor)
     assert "Required context" in description
     assert "testcontext" in description
     dummy_executor.ctx = {"testcontext": "testvalue", "contextnotintask": "testvaluenotintask"}
-    description = dummy_executor.describe()
+    description = str(dummy_executor)
     assert "(set to testvalue)" in description
     assert "contextnotintask" in description
