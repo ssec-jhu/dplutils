@@ -1,3 +1,4 @@
+import itertools
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -37,6 +38,20 @@ class PipelineExecutor(ABC):
             self.graph = deepcopy(graph)
         self.ctx = {}
         self._run_id = None
+
+    def __str__(self) -> str:
+        desc = "Tasks:\n" + "\n".join([f"  - {task}" for task in self.graph]) + "\n"
+        required_context = set(itertools.chain.from_iterable(task.context_kwargs.keys() for task in self.graph)).union(
+            self.ctx.keys()
+        )
+        if required_context:
+            desc += "Required context:\n"
+            for key in sorted(required_context):
+                desc += f"  - {key}"
+                if key in self.ctx:
+                    desc += f" (set to {self.ctx[key]})"
+                desc += "\n"
+        return desc
 
     @classmethod
     def from_graph(cls, graph: PipelineGraph) -> "PipelineExecutor":

@@ -9,6 +9,7 @@ def add_generic_args(argparser):
 
     The generic set of CLI arguments are as follows:
 
+        - ``-i`` (``--info``): show detailed info about pipeline and tasks.
         - ``-f`` (``--file``): set configuration and context from specified yaml file.
         - ``-c`` (``--set-context``): Set pipline context item.
         - ``-s`` (``--set-config``): Set pipline config item.
@@ -18,6 +19,7 @@ def add_generic_args(argparser):
         argparser: The :class:`ArgumentParser<argparse.ArgumentParser>` instance
           to add args to.
     """
+    argparser.add_argument("-i", "--info", action="store_true", help="show detailed info about pipeline and tasks")
     argparser.add_argument("-f", "--file", default=None, help="path of yaml pipeline config file")
     argparser.add_argument("-c", "--set-context", action="append", default=[], help="set context parameter")
     argparser.add_argument("-s", "--set-config", action="append", default=[], help="set configuration parameter")
@@ -96,4 +98,9 @@ def cli_run(pipeline: PipelineExecutor, args: Namespace | None = None, **argpars
     if args is None:
         args = get_argparser(**argparse_kwargs).parse_args()
     set_config_from_args(pipeline, args)
+    if args.info:
+        print(pipeline)
+        print("Set task parameters with --set-config, context with --set-context")
+        print("See --help for more options")
+        return
     pipeline.writeto(args.out_dir)

@@ -1,3 +1,4 @@
+from io import StringIO
 from textwrap import dedent
 
 import pytest
@@ -103,3 +104,12 @@ def test_run_with_cli_helper(monkeypatch, dummy_executor, tmp_path):
     assert dummy_executor.tasks_idx["task_kw"].kwargs["b"] == 99
     assert dummy_executor.tasks_idx["task_kw"].num_cpus == 0.5
     assert len(list(tmp_path.glob("*.parquet"))) == 10
+
+
+def test_cli_pipeline_info(monkeypatch, tmp_path, dummy_executor):
+    monkeypatch.setattr("sys.argv", ["", "--info", "-o", str(tmp_path)])
+    sio = StringIO()
+    monkeypatch.setattr("sys.stdout", sio)
+    cli.cli_run(dummy_executor)
+    assert str(dummy_executor) in sio.getvalue()
+    assert len(list(tmp_path.glob("*.parquet"))) == 0
