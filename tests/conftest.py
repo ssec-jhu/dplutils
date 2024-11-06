@@ -28,7 +28,9 @@ def test_file(tmp_path_factory):
 
 class DummyExecutor(PipelineExecutor):
     def execute(self):
+        self.logger.info("Executing dummy executor")
         for i in range(10):
+            self.logger.debug(f"Yielding batch {i}")
             yield OutputBatch(pd.DataFrame({"id": range(10)}), task=self.graph.sink_tasks[0].name)
 
 

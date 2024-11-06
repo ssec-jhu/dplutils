@@ -22,11 +22,11 @@ TEST_ARGV = [
 
 
 @pytest.fixture
-def sys_argv(monkeypatch):
+def sys_argv(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("sys.argv", TEST_ARGV)
 
 
-def test_get_argparser_adds_default_arguments(sys_argv):
+def test_get_argparser_adds_default_arguments(sys_argv: None):
     args = cli.get_argparser().parse_args()
     assert args.set_context == ["ctx=ctx-value"]
     assert args.set_config == ["a.b.c=[1,2,3]", "a.b.x=99", "x.y=1", "l.m=string"]
@@ -113,3 +113,20 @@ def test_cli_pipeline_info(monkeypatch, tmp_path, dummy_executor):
     cli.cli_run(dummy_executor)
     assert str(dummy_executor) in sio.getvalue()
     assert len(list(tmp_path.glob("*.parquet"))) == 0
+
+
+@pytest.mark.parametrize("verbosity", ["DEBUG", "INFO", "ERROR"])
+def test_cli_logging_config(monkeypatch, dummy_executor, verbosity, tmp_path):
+    monkeypatch.setattr("sys.argv", ["", "--verbosity", verbosity, "-o", str(tmp_path)])
+    sio = StringIO()
+    monkeypatch.setattr("sys.stderr", sio)
+    cli.cli_run(dummy_executor)
+    log_output = sio.getvalue()
+    if verbosity == "ERROR":
+        assert "DEBUG" not in log_output
+        assert "INFO" not in log_output
+    elif verbosity == "INFO":
+        assert "DEBUG" not in log_output
+        assert "INFO" in log_output
+    elif verbosity == "DEBUG":
+        assert "DEBUG" in log_output
