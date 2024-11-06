@@ -198,6 +198,9 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         cluster_r = ray.cluster_resources()
         ck_map = {"num_cpus": "CPU", "num_gpus": "GPU"}
         task_r = task_resources(task)
+        self.logger.debug(
+            f"Resources for <{task.name}>: {task_r}, scheduled: {self.sched_resources}, cluster total: {cluster_r}"
+        )
         for k in task_r:
             avail = cluster_r.get(ck_map.get(k, k), 0) - self.sched_resources.get(k, 0)
             # Overcommit the resources for all downstream tasks to ensure that
@@ -208,6 +211,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
                 return False
             elif avail < 0:
                 return False
+        self.logger.debug(f"Task <{task.name}> is submittable")
         return True
 
     def task_submit(self, task, df_list):
@@ -239,6 +243,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
 
     def poll_tasks(self, remote_task_list):
         all_refs = list(chain.from_iterable(i.refs for i in remote_task_list))
+        self.logger.debug(f"Polling {len(all_refs)} remote tasks, timeout: {self.ray_poll_timeout}")
         # The timeout here is to ensure we can process through the tasks again
         # in the case where the cluster is expanded. The timescale here just
         # needs to be on the order of how long it takes to get new hardware
