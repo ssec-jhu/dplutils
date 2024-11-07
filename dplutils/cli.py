@@ -84,9 +84,8 @@ def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
 def setup_logging(level):
     """Set up logging for the pipeline
 
-    This function sets up logging for the pipeline, using the standard
-    python logging module. The level is set to the value of the
-    ``verbosity`` argument.
+    This function sets up logging for the pipeline, using the standard python
+    logging module. The level is set to the value of the ``verbosity`` argument.
     """
     logging.basicConfig(level=level, format=LOG_FORMAT, force=True)
 
