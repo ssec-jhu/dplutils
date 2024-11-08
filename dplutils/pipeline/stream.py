@@ -165,9 +165,11 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             total_length += len(next_df)
 
     def enqueue_tasks(self):
-        # Work through the graph in reverse order, submitting any tasks as
-        # needed. Reverse order ensures we prefer to send tasks that are closer
-        # to the end of the pipeline and only feed as necessary.
+        # helper to make submission decision of a single task based on the batch
+        # size, exhaustion conditions, and whether the implementation deems it
+        # submittable. Returns flags (eligible, submitted) to indicate whether
+        # it was eligible to be submitted based on input queue and batch size,
+        # and whether it was actually submitted.
         def _handle_one_task(task, rank):
             eligible = submitted = False
             if len(task.data_in) == 0:
@@ -179,34 +181,40 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                     self.logger.debug(f"Enqueueing split for <{task.name}>[bs={batch_size}]")
                     task.split_pending.appendleft(self.split_batch_submit(batch, batch_size))
 
-            while len(task.data_in) > 0:
-                num_to_merge = deque_num_merge(task.data_in, batch_size)
-                if num_to_merge == 0:
-                    # If the feed is terminated and there are no more tasks that
-                    # will feed to this one, submit everything
-                    if self.source_exhausted and self.task_exhausted(task):
-                        num_to_merge = len(task.data_in)
-                    else:
-                        break
-                eligible = True
-                if not self.task_submittable(task.task, rank):
-                    break
-                merged = [task.data_in.pop().data for i in range(num_to_merge)]
-                self.logger.debug(f"Enqueueing merged batches <{task.name}>[n={len(merged)};bs={batch_size}]")
-                task.pending.appendleft(self.task_submit(task.task, merged))
-                task.counter += 1
-                submitted = True
+            num_to_merge = deque_num_merge(task.data_in, batch_size)
+            if num_to_merge == 0:
+                # If the feed is terminated and there are no more tasks that
+                # will feed to this one, submit everything
+                if self.source_exhausted and self.task_exhausted(task):
+                    num_to_merge = len(task.data_in)
+                else:
+                    return (eligible, submitted)
+            eligible = True
+            if not self.task_submittable(task.task, rank):
+                return (eligible, submitted)
+
+            merged = [task.data_in.pop().data for _ in range(num_to_merge)]
+            self.logger.debug(f"Enqueueing merged batches <{task.name}>[n={len(merged)};bs={batch_size}]")
+            task.pending.appendleft(self.task_submit(task.task, merged))
+            task.counter += 1
+            submitted = True
             return (eligible, submitted)
 
         # proceed through all non-source tasks, which will be handled separately
-        # below due to the need to feed from generator.
-        rank = 0
-        for task in self.stream_graph.walk_back(sort_key=lambda x: x.counter):
-            if task in self.stream_graph.source_tasks:
-                continue
-            eligible, _ = _handle_one_task(task, rank)
-            if eligible:  # update rank of this task if it _could_ be done, whether or not it was
-                rank += 1
+        # below due to the need to feed from generator. We walk backwards,
+        # re-evaluating the sort order of tasks of same depth after each single
+        # submission, implementing a kind of "fair" submission, while still
+        # prioritizing tasks closer to the sink.
+        submitted = True
+        while submitted:
+            rank = 0
+            submitted = False
+            for task in self.stream_graph.walk_back(sort_key=lambda x: x.counter):
+                if task in self.stream_graph.source_tasks:
+                    continue
+                eligible, submitted = _handle_one_task(task, rank)
+                if eligible:  # update rank of this task if it _could_ be done, whether or not it was
+                    rank += 1
 
         # Source as many inputs as can fit on source tasks. We prioritize flushing the
         # input queue and secondarily on number of invocations in case batch sizes differ.
