@@ -31,6 +31,7 @@ def graph_suite():
         "multisource": make_graph_struct([(a, c), (b, c), (c, d)], [a, b], [d]),
         "multisink": make_graph_struct([(a, b), (b, c), (b, d)], [a], [c, d]),
         "branchmulti": make_graph_struct([(a, c), (b, c), (c, d), (c, e), (d, f), (e, g)], [a, b], [f, g]),
+        "branchmultiout": make_graph_struct([(a, b), (b, c), (b, d), (d, e), (d, f), (f, g)], [a], [c, e, g]),
     }
 
 
@@ -79,6 +80,14 @@ class TestGraph:
         assert walked[-1] in graph_info.sources
         assert len(walked) == len(p)
 
+    def test_graph_walk_excludes_starting_node(self, graph_info):
+        p = PipelineGraph(graph_info.edges)
+        source = graph_info.sinks[0]
+        walked = list(p.walk_back(source))
+        assert source not in walked
+        walked = list(p.walk_fwd(source))
+        assert source not in walked
+
 
 def test_graph_walk_with_priority():
     test = graph_suite()["branched"]
@@ -92,6 +101,16 @@ def test_graph_walk_with_priority():
     assert walked == [p.task_map[i] for i in ["e", "d", "c", "b", "a"]]
     walked = list(p.walk_fwd(sort_key=lambda x: -x.func))
     assert walked == [p.task_map[i] for i in ["a", "b", "d", "c", "e"]]
+    # make sure to test with multi output, which can make priority in BFS more
+    # challenging, specifically in the back direction. Critically below, nodes
+    # "b" and "d" are both 2 away from the sink at minimum, but "f" is farther
+    # along so it should be priority, while all sinks should still be
+    # prioritized
+    p = PipelineGraph(graph_suite()["branchmultiout"].edges)
+    walked = list(p.walk_back(sort_key=lambda x: x.func))
+    assert walked == [p.task_map[i] for i in ["c", "e", "g", "f", "d", "b", "a"]]
+    walked = list(p.walk_back(sort_key=lambda x: -x.func))
+    assert walked == [p.task_map[i] for i in ["g", "e", "c", "f", "d", "b", "a"]]
 
 
 def test_single_node_graph_to_list():
