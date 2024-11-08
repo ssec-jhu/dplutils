@@ -129,12 +129,15 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 if block_info.length == 0:
                     continue
                 if task in self.stream_graph.sink_tasks:
+                    self.logger.debug(f"Batch <{task.name}>[l={block_info.length}] completed as output")
                     return OutputBatch(block_info.data, task=task.name)
                 else:
                     for next_task in self.stream_graph.neighbors(task):
+                        self.logger.debug(f"Moving <{task.name}>[l={block_info.length}] to <{next_task.name}>")
                         next_task.data_in.appendleft(block_info)
 
             for ready in deque_extract(task.split_pending, self.is_task_ready):
+                self.logger.debug(f"Splits <{task.name}> completed, moving to input queue")
                 task.data_in.extendleft(self.task_resolve_output(ready))
         return None
 
@@ -146,6 +149,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             try:
                 next_df = next(self.source_generator)
             except StopIteration:
+                self.logger.debug("Source generator exhausted")
                 self.source_exhausted = True
                 break
             # We feed any generated source to all source tasks similar the way
@@ -155,6 +159,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 task.data_in.append(StreamBatch(data=next_df, length=len(next_df)))
             self.n_sourced += 1
             if self.n_sourced == self.max_batches:
+                self.logger.debug("Max batches reached, cancelling source generation")
                 self.source_exhausted = True
                 break
             total_length += len(next_df)
@@ -171,6 +176,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             batch_size = task.task.batch_size
             if batch_size is not None:
                 for batch in deque_extract(task.data_in, lambda b: b.length > batch_size):
+                    self.logger.debug(f"Enqueueing split for <{task.name}>[bs={batch_size}]")
                     task.split_pending.appendleft(self.split_batch_submit(batch, batch_size))
 
             while len(task.data_in) > 0:
@@ -186,6 +192,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 if not self.task_submittable(task.task, rank):
                     break
                 merged = [task.data_in.pop().data for i in range(num_to_merge)]
+                self.logger.debug(f"Enqueueing merged batches <{task.name}>[n={len(merged)};bs={batch_size}]")
                 task.pending.appendleft(self.task_submit(task.task, merged))
                 task.counter += 1
                 submitted = True
@@ -220,6 +227,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 return completed
 
             if self.source_exhausted and self.task_exhausted():
+                self.logger.debug("All tasks exhausted, pipeline run ends")
                 return None
 
             self.enqueue_tasks()

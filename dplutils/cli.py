@@ -1,7 +1,10 @@
 import json
+import logging
 from argparse import ArgumentParser, Namespace
 
 from dplutils.pipeline import PipelineExecutor
+
+LOG_FORMAT = "%(asctime)s (%(name)s) [%(levelname)s]: %(message)s"
 
 
 def add_generic_args(argparser):
@@ -14,6 +17,7 @@ def add_generic_args(argparser):
         - ``-c`` (``--set-context``): Set pipline context item.
         - ``-s`` (``--set-config``): Set pipline config item.
         - ``-o`` (``--out-dir``): Directory to write output files to.
+        - ``-v`` (``--verbosity``): Verbosity level for logging (default INFO).
 
     Args:
         argparser: The :class:`ArgumentParser<argparse.ArgumentParser>` instance
@@ -24,6 +28,7 @@ def add_generic_args(argparser):
     argparser.add_argument("-c", "--set-context", action="append", default=[], help="set context parameter")
     argparser.add_argument("-s", "--set-config", action="append", default=[], help="set configuration parameter")
     argparser.add_argument("-o", "--out-dir", default=".", help="write results to directory")
+    argparser.add_argument("-v", "--verbosity", default="INFO", help="logging verbosity level")
 
 
 def get_argparser(**kwargs):
@@ -76,6 +81,15 @@ def set_config_from_args(pipeline: PipelineExecutor, args: Namespace):
         pipeline.set_config(*parse_config_element(conf))
 
 
+def setup_logging(level):
+    """Set up logging for the pipeline
+
+    This function sets up logging for the pipeline, using the standard python
+    logging module. The level is set to the value of the ``verbosity`` argument.
+    """
+    logging.basicConfig(level=level, format=LOG_FORMAT, force=True)
+
+
 def cli_run(pipeline: PipelineExecutor, args: Namespace | None = None, **argparse_kwargs):
     """Run pipeline from cli args
 
@@ -103,4 +117,5 @@ def cli_run(pipeline: PipelineExecutor, args: Namespace | None = None, **argpars
         print("Set task parameters with --set-config, context with --set-context")
         print("See --help for more options")
         return
+    setup_logging(args.verbosity)
     pipeline.writeto(args.out_dir)

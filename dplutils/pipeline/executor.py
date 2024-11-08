@@ -1,4 +1,5 @@
 import itertools
+import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -10,6 +11,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from dplutils import __project__
 from dplutils.pipeline.graph import PipelineGraph
 from dplutils.pipeline.utils import dict_from_coord
 
@@ -38,6 +40,7 @@ class PipelineExecutor(ABC):
             self.graph = deepcopy(graph)
         self.ctx = {}
         self._run_id = None
+        self.logger = logging.getLogger(f"{__project__}.{self.__class__.__name__}")
 
     def __str__(self) -> str:
         desc = "Tasks:\n" + "\n".join([f"  - {task}" for task in self.graph]) + "\n"
@@ -200,4 +203,5 @@ class PipelineExecutor(ABC):
                 outfile = part_path / f"{self.run_id}-{c}.parquet"
             else:
                 outfile = Path(outdir) / f"{self.run_id}-{c}.parquet"
+            self.logger.debug(f"Writing output <{batch.task}>[l={len(batch.data)};c={c}] to {outfile}")
             batch.data.to_parquet(outfile, index=False)
