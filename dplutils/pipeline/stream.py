@@ -215,6 +215,8 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 eligible, submitted = _handle_one_task(task, rank)
                 if eligible:  # update rank of this task if it _could_ be done, whether or not it was
                     rank += 1
+                if submitted:
+                    break
 
         # Source as many inputs as can fit on source tasks. We prioritize flushing the
         # input queue and secondarily on number of invocations in case batch sizes differ.
