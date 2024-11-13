@@ -1,3 +1,4 @@
+from collections import defaultdict
 from enum import Enum
 
 from networkx import DiGraph, all_simple_paths, bfs_edges, is_directed_acyclic_graph, path_graph
@@ -69,6 +70,7 @@ class PipelineGraph(DiGraph):
             return 0 if isinstance(x, TRM) else sort_key(x)
 
         sorter = (lambda x: sorted(x, key=_sort_key)) if sort_key else None
+
         for _, node in bfs_edges(graph, source, reverse=back, sort_neighbors=sorter):
             if not isinstance(node, TRM):
                 yield node
@@ -101,4 +103,21 @@ class PipelineGraph(DiGraph):
             tasks in order of callable `sort_key`, which should return a
             sortable object given :class:`PipelineTask` as input.
         """
-        return self._walk(source or TRM.sink, back=True, sort_key=sort_key)
+        paths = all_simple_paths(self.with_terminals().reverse(), source or TRM.sink, TRM.source)
+        depths = defaultdict(int)
+        layers = defaultdict(list)
+        # unlike bfs_edges/bfs_layers, we order by maximum depth from source, to
+        # try and ensure we prioritize outputs while also preferring tasks
+        # further along.
+        for path in paths:
+            for i, node in enumerate(path):
+                if isinstance(node, TRM) or node == source:
+                    continue
+                depths[node] = max(depths[node], i)
+        for node, depth in depths.items():
+            layers[depth].append(node)
+        # layers will be keyed by maximum distance from source, containing a
+        # list of nodes at that distance. Yield based on sort key secondarily.
+        for i in sorted(layers.keys()):
+            for node in sorted(layers[i], key=sort_key or (lambda x: 0)):
+                yield node
