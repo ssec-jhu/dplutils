@@ -67,3 +67,15 @@ def test_ray_stream_remote_tasks_configuration_applies():
     assert res_df.iloc[0].ncpu == 1
     res_df = next(pl.set_config("task.num_cpus", 0.1).run()).data
     assert res_df.iloc[0].ncpu == 0.1
+
+
+def test_ray_stream_ignores_resources_with_zero_requests(dummy_steps):
+    pl = RayStreamGraphExecutor(dummy_steps)
+    pl.set_config("task1.resources.someresource", 1)
+    # we use rank 1 to ensure that it wont try to oversubscribe the resource
+    # (the cluster should have none)
+    assert not pl.task_submittable(pl.tasks_idx["task1"], 1)
+    # now we explicitly set to zero, the resource should still be specified in
+    # the config, but we should ignore it in scheduling due to zero request
+    pl.set_config("task1.resources.someresource", 0)
+    assert pl.task_submittable(pl.tasks_idx["task1"], 1)
