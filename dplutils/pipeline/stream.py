@@ -46,6 +46,10 @@ class StreamTask:
     def name(self):
         return self.task.name
 
+    @property
+    def all_pending(self):
+        return self.pending + self.split_pending
+
     def total_pending(self):
         return sum(len(i) for i in [self.data_in, self.pending, self.split_pending])
 
@@ -109,7 +113,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             bid += 1
 
     def get_pending(self):
-        return [p for tn in self.stream_graph for p in tn.pending]
+        return [p for tn in self.stream_graph for p in tn.all_pending]
 
     def task_exhausted(self, task=None):
         if task is not None and len(task.split_pending) > 0:
