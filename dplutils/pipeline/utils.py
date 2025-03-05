@@ -21,6 +21,10 @@ def deque_extract(queue, condition):
             queue.rotate()
 
 
+def calculate_splits(length, max_rows):
+    return int(np.ceil(length / max_rows))
+
+
 def split_dataframe(df, max_rows=None, num_splits=None):
     """Split dataframe by max number of rows or given splits.
 
@@ -32,6 +36,6 @@ def split_dataframe(df, max_rows=None, num_splits=None):
     single split has more than max_rows
     """
     if num_splits is None:
-        num_splits = np.ceil(len(df) / max_rows)
+        num_splits = calculate_splits(len(df), max_rows)
     chunks = np.linspace(0, num_splits, num=len(df), endpoint=False, dtype=np.int32)
     return [chunk for _, chunk in df.groupby(chunks)]
