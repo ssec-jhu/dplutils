@@ -96,15 +96,22 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         self.stream_graph = nx.relabel_nodes(self.graph, StreamTask)
         self.generator_fun = generator or self.source_generator_fun
 
+    def pre_execute(self):
+        pass
+
+    def output_batch_transform(self, batch: OutputBatch) -> OutputBatch:
+        return batch
+
     def execute(self):
         self.n_sourced = 0
         self.source_exhausted = False
         self.source_generator = self.generator_fun()
+        self.pre_execute()
         while True:
             batch = self.execute_until_output()
             if batch is None:
                 return
-            yield batch
+            yield self.output_batch_transform(batch)
 
     def source_generator_fun(self):
         bid = 0

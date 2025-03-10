@@ -2,6 +2,8 @@ import pytest
 from test_suite import PipelineExecutorTestSuite
 
 import dplutils.pipeline.hyperqueue
+import dplutils.pipeline.staging
+from dplutils.pipeline.xpy import xpy_main
 
 
 class TestClient:
@@ -10,7 +12,7 @@ class TestClient:
         self.job_id = 1
 
     def add_task(self, args, input=None, **kwargs):
-        dplutils.pipeline.hyperqueue.hyperqueue_main(input)
+        xpy_main(input)
         self.task_id += 1
         return self.task_id
 
@@ -27,7 +29,7 @@ class TestClient:
 @pytest.fixture(autouse=True)
 def client_patch(monkeypatch, tmp_path):
     monkeypatch.setattr(dplutils.pipeline.hyperqueue, "HyperQueueClient", TestClient)
-    monkeypatch.setattr(dplutils.pipeline.hyperqueue, "DEFAULT_STAGING_PATH", str(tmp_path))
+    monkeypatch.setattr(dplutils.pipeline.staging, "DEFAULT_STAGING_PATH", tmp_path)
 
 
 class TestHyperQueueExecutor(PipelineExecutorTestSuite):

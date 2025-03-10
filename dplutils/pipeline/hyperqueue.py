@@ -1,12 +1,8 @@
 import json
-import os
 import subprocess
 import sys
 import tempfile
 import time
-import uuid
-from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 
 import cloudpickle
@@ -16,6 +12,7 @@ import pyarrow.parquet as pq
 from dplutils.pipeline.stream import StreamBatch, StreamingGraphExecutor
 from dplutils.pipeline.task import PipelineTask
 from dplutils.pipeline.utils import calculate_splits, split_dataframe
+from dplutils.pipeline.xpy import XPyStreamExecutor, XPyTask
 
 
 class HyperQueueClient:
@@ -79,78 +76,36 @@ class HyperQueueClient:
         return self._do_hq(cmd)[str(self.job_id)]
 
 
-@dataclass
-class HyperQueueRemoteBundle:
-    function: callable
-    kwargs: dict
-    input_files: list[Path | pd.DataFrame]
-    output_files: list[Path]
+class HyperTaskQueue:
+    def __init__(self):
+        self.finished = set()
+        self.running = set()
+        self.sourced = set()
 
 
-@dataclass
-class HyperQueueTask:
-    task: PipelineTask
-    hq_task_id: int
-    input_files: list[Path]
-    output_files: list[Path]
-
-
-class FileStager:
-    def __init__(self, staging_root):
-        self.staging_root = Path(staging_root)
-        self.staging_root.mkdir(exist_ok=True, parents=True)
-        self.usage = defaultdict(int)
-
-    def get(self, name, num=1):
-        tag = f"{name}-{uuid.uuid1()}"
-        if num > 1:
-            return [self.staging_root / f"{tag}-{i}.par" for i in range(num)]
-        return self.staging_root / f"{tag}.par"
-
-    def mark_usage(self, file, n=1):
-        self.usage[file] += n
-
-    def mark_complete(self, file):
-        self.usage[file] -= 1
-        if self.usage[file] <= 0:
-            os.unlink(file)
-        del self.usage[file]
-
-
-DEFAULT_STAGING_PATH = os.environ.get("DPL_STAGING_PATH", tempfile.gettempdir())
-
-
-class HyperQueueStreamExecutor(StreamingGraphExecutor):
-    def __init__(self, *args, poll_interval=2, staging_path=None, **kwargs):
+class HyperQueueStreamExecutor(XPyStreamExecutor):
+    def __init__(self, *args, poll_interval=2, **kwargs):
         super().__init__(*args, **kwargs)
         self.poll_interval = poll_interval
-        self.staging_path = Path(staging_path or DEFAULT_STAGING_PATH)
 
-    def _setup_hq(self):
+    def pre_execute(self):
+        super().pre_execute()
         self.hq_job = HyperQueueClient(name=self.run_id)
-        self.hq_completion_queue = set()
-        self.hq_running_queue = set()
-        self.source_queue = set()
-        self.filestager = FileStager(self.staging_path / f"hq-staging-{self.run_id}")
+        self.task_queue = HyperTaskQueue()
         self._task_ranks = self.graph.rank_nodes()
 
-    def execute(self):
-        self._setup_hq()
-        try:
-            for batch in super().execute():
-                staged_file = batch.data
-                batch.data = pd.read_parquet(staged_file)
-                self.filestager.mark_complete(staged_file)
-                yield batch
-        except StopIteration:
-            raise
-        except (Exception, KeyboardInterrupt):
-            self.hq_job.cancel_job()
-            raise
-        self.hq_job.close_job()
+    def submit_task_execution(self, task: PipelineTask, cmd: list[str], pickled_bundle: bytes):
+        if task is None:  # split task
+            return self.hq_job.add_task(cmd, input=pickled_bundle, priority=2)
+        resources = {"cpus": task.num_cpus, "gpus": task.num_gpus, **task.resources}
+        priority = 1 - self._task_ranks[task]
+        task_id = self.hq_job.add_task(cmd, input=pickled_bundle, priority=priority, resources=resources)
+        if task in self.graph.source_tasks:
+            self.task_queue.sourced.add(task_id)
+        return task_id
 
-    def is_task_ready(self, task):
-        if task.hq_task_id in self.hq_completion_queue:
+    def is_task_ready(self, task: XPyTask):
+        if task.submitted_task_info in self.task_queue.finished:
             return True
 
     def task_submittable(self, task: PipelineTask, rank: int) -> bool:
@@ -158,100 +113,30 @@ class HyperQueueStreamExecutor(StreamingGraphExecutor):
         # we submit thing so long as there are at least some waiting. Priority
         # should prevent them from taking over.
         if task in self.graph.source_tasks:
-            sources_waiting = len(self.source_queue - self.hq_running_queue)
+            sources_waiting = len(self.task_queue.sourced - self.task_queue.running)
             if sources_waiting > 10:
                 return False
         # Otherwise we just queue with priority related to distance from the
         # sink so tasks are always submittable
         return True
 
-    def task_submit(self, task: PipelineTask, df_list):
-        bundle = HyperQueueRemoteBundle(
-            function=task.func,
-            kwargs=task.resolve_kwargs(self.ctx),
-            input_files=df_list,
-            output_files=[self.filestager.get(task.name)],
-        )
-        pickled_bundle = cloudpickle.dumps(bundle)
-        resources = {"cpus": task.num_cpus, "gpus": task.num_gpus, **task.resources}
-        # in hyperqueue, higher priority value is executed first, whereas rank
-        # is the inverse. hyperqueue supports signed priorities
-        priority = 1 - self._task_ranks[task]
-        task_id = self.hq_job.add_task(
-            [sys.executable, "-m", "dplutils.pipeline.hyperqueue", task.name],
-            input=pickled_bundle,
-            resources=resources,
-            priority=priority,
-        )
-        print(f"Submitted task {task.name} with priority {priority}")
-        if task in self.graph.source_tasks:
-            self.source_queue.add(task_id)
-        disk_input_files = [i for i in df_list if isinstance(i, Path)]
-        return HyperQueueTask(
-            task=task, hq_task_id=task_id, input_files=disk_input_files, output_files=bundle.output_files
-        )
-
-    def split_batch_submit(self, batch: StreamBatch, max_rows: int):
-        num_splits = calculate_splits(batch.length, max_rows)
-        output_files = self.filestager.get("split", num=num_splits)
-        bundle = HyperQueueRemoteBundle(
-            function=split_dataframe,
-            kwargs={"num_splits": num_splits},
-            input_files=[batch.data],
-            output_files=output_files,
-        )
-        task_id = self.hq_job.add_task(
-            [sys.executable, "-m", "dplutils.pipeline.hyperqueue", "split"], input=cloudpickle.dumps(bundle), priority=2
-        )
-        return HyperQueueTask(task=None, hq_task_id=task_id, input_files=[batch.data], output_files=output_files)
-
     def task_resolve_output(self, task):
         if task.task in self.graph.source_tasks:
-            self.source_queue.remove(task.hq_task_id)
-        for i in task.input_files:
-            self.filestager.mark_complete(i)
-        outs = []
-        for output in task.output_files:
-            n_consumers = self.graph.out_degree(task.task) if task.task else 1
-            self.filestager.mark_usage(output, n=n_consumers)
-            output_len = pq.read_metadata(output).num_rows
-            outs.append(StreamBatch(length=output_len, data=output))
-        return outs if len(outs) > 1 else outs[0]
+            self.task_queue.sourced.remove(task.submitted_task_info)
+        return super().task_resolve_output(task)
 
-    def poll_tasks(self, pending_task_list):
-        task_ids = [task.hq_task_id for task in pending_task_list]
+    def poll_tasks(self, pending_task_list: list[XPyTask]):
+        task_ids = [task.submitted_task_info for task in pending_task_list]
         states = self.hq_job.get_tasks(task_ids=task_ids)
-        self.hq_completion_queue.clear()
-        self.hq_running_queue.clear()
+        self.task_queue.finished.clear()
+        self.task_queue.running.clear()
         for state in states:
             if state["state"] == "failed":
                 raise RuntimeError(f"Task {state['id']} failed")
             elif state["state"] == "finished":
-                self.hq_completion_queue.add(state["id"])
+                self.task_queue.finished.add(state["id"])
             elif state["state"] == "running":
-                self.hq_running_queue.add(state["id"])
-        if self.hq_completion_queue:
+                self.task_queue.running.add(state["id"])
+        if self.task_queue.finished:
             return
         time.sleep(self.poll_interval)
-
-
-def hyperqueue_task_run(bundle):
-    for i in range(len(bundle.input_files)):
-        if isinstance(bundle.input_files[i], Path):
-            bundle.input_files[i] = pd.read_parquet(bundle.input_files[i])
-    df_in = pd.concat(bundle.input_files)
-    df_out = bundle.function(df_in, **bundle.kwargs)
-    if len(bundle.output_files) > 1:
-        for df, of in zip(df_out, bundle.output_files):
-            df.to_parquet(of)
-    else:
-        df_out.to_parquet(bundle.output_files[0])
-
-
-def hyperqueue_main(data):
-    bundle = cloudpickle.loads(data)
-    hyperqueue_task_run(bundle)
-
-
-if __name__ == "__main__":
-    hyperqueue_main(sys.stdin.buffer.read())
