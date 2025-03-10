@@ -1,9 +1,11 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,22 +52,31 @@ class HyperQueueClient:
     def close_job(self):
         self._do_hq(["job", "close", str(self.job_id)])
 
+    def cancel_job(self):
+        self._do_hq(["job", "cancel", str(self.job_id)])
+
     def add_task(self, args, input=None, priority=0, resources={}):
-        task_cmd = ["submit", "--job", str(self.job_id), "--stream", self.stream, "--priority", str(priority)]
+        task_cmd = ["submit", f"--job={self.job_id}", f"--stream={self.stream}", f"--priority={priority}"]
         if input is not None:
             task_cmd += ["--stdin"]
         for resource, request in resources.items():
-            task_cmd += ["--resource", f"{resource}={request}"]
+            if request is None:
+                continue
+            if resource == "gpus":
+                resource = "gpus/nvidia"
+            task_cmd += [f"--resource={resource}={request}"]
         task_cmd += args
         self._do_hq(task_cmd, input=input)
-        self.task_counter += 1  # this means we are not thread safe
+        # this means we are not thread safe and tasks cannot be added to the
+        # same job from outside this client
+        self.task_counter += 1
         return self.task_counter
 
     def get_tasks(self, task_ids=[]):
         cmd = ["task", "list", str(self.job_id)]
         if task_ids:
             cmd += ["--tasks", ",".join(str(i) for i in task_ids)]
-        return self._do_hq(cmd)
+        return self._do_hq(cmd)[str(self.job_id)]
 
 
 @dataclass
@@ -88,6 +99,7 @@ class FileStager:
     def __init__(self, staging_root):
         self.staging_root = Path(staging_root)
         self.staging_root.mkdir(exist_ok=True, parents=True)
+        self.usage = defaultdict(int)
 
     def get(self, name, num=1):
         tag = f"{name}-{uuid.uuid1()}"
@@ -96,13 +108,16 @@ class FileStager:
         return self.staging_root / f"{tag}.par"
 
     def mark_usage(self, file, n=1):
-        pass
+        self.usage[file] += n
 
     def mark_complete(self, file):
-        pass
+        self.usage[file] -= 1
+        if self.usage[file] <= 0:
+            os.unlink(file)
+        del self.usage[file]
 
 
-DEFAULT_STAGING_PATH = tempfile.tempdir
+DEFAULT_STAGING_PATH = os.environ.get("DPL_STAGING_PATH", tempfile.gettempdir())
 
 
 class HyperQueueStreamExecutor(StreamingGraphExecutor):
@@ -114,13 +129,24 @@ class HyperQueueStreamExecutor(StreamingGraphExecutor):
     def _setup_hq(self):
         self.hq_job = HyperQueueClient(name=self.run_id)
         self.hq_completion_queue = set()
+        self.hq_running_queue = set()
+        self.source_queue = set()
         self.filestager = FileStager(self.staging_path / f"hq-staging-{self.run_id}")
+        self._task_ranks = self.graph.rank_nodes()
 
     def execute(self):
         self._setup_hq()
-        for batch in super().execute():
-            batch.data = pd.read_parquet(batch.data)
-            yield batch
+        try:
+            for batch in super().execute():
+                staged_file = batch.data
+                batch.data = pd.read_parquet(staged_file)
+                self.filestager.mark_complete(staged_file)
+                yield batch
+        except StopIteration:
+            raise
+        except (Exception, KeyboardInterrupt):
+            self.hq_job.cancel_job()
+            raise
         self.hq_job.close_job()
 
     def is_task_ready(self, task):
@@ -128,10 +154,15 @@ class HyperQueueStreamExecutor(StreamingGraphExecutor):
             return True
 
     def task_submittable(self, task: PipelineTask, rank: int) -> bool:
-        # We just queue with priority related to distance from the sink so tasks
-        # are always submittable
-        # TODO: however, we need to ensure that we don't create infinite source
-        # tasks which would otherwise happen if they were always eligible!!
+        # In the case of sources, we need to prevent infinite queueing here, so
+        # we submit thing so long as there are at least some waiting. Priority
+        # should prevent them from taking over.
+        if task in self.graph.source_tasks:
+            sources_waiting = len(self.source_queue - self.hq_running_queue)
+            if sources_waiting > 10:
+                return False
+        # Otherwise we just queue with priority related to distance from the
+        # sink so tasks are always submittable
         return True
 
     def task_submit(self, task: PipelineTask, df_list):
@@ -143,9 +174,18 @@ class HyperQueueStreamExecutor(StreamingGraphExecutor):
         )
         pickled_bundle = cloudpickle.dumps(bundle)
         resources = {"cpus": task.num_cpus, "gpus": task.num_gpus, **task.resources}
+        # in hyperqueue, higher priority value is executed first, whereas rank
+        # is the inverse. hyperqueue supports signed priorities
+        priority = 1 - self._task_ranks[task]
         task_id = self.hq_job.add_task(
-            [sys.executable, "-m", "dplutils.pipeline.hyperqueue"], input=pickled_bundle, resources=resources
+            [sys.executable, "-m", "dplutils.pipeline.hyperqueue", task.name],
+            input=pickled_bundle,
+            resources=resources,
+            priority=priority,
         )
+        print(f"Submitted task {task.name} with priority {priority}")
+        if task in self.graph.source_tasks:
+            self.source_queue.add(task_id)
         disk_input_files = [i for i in df_list if isinstance(i, Path)]
         return HyperQueueTask(
             task=task, hq_task_id=task_id, input_files=disk_input_files, output_files=bundle.output_files
@@ -161,16 +201,19 @@ class HyperQueueStreamExecutor(StreamingGraphExecutor):
             output_files=output_files,
         )
         task_id = self.hq_job.add_task(
-            [sys.executable, "-m", "dplutils.pipeline.hyperqueue"], input=cloudpickle.dumps(bundle)
+            [sys.executable, "-m", "dplutils.pipeline.hyperqueue", "split"], input=cloudpickle.dumps(bundle), priority=2
         )
         return HyperQueueTask(task=None, hq_task_id=task_id, input_files=[batch.data], output_files=output_files)
 
     def task_resolve_output(self, task):
+        if task.task in self.graph.source_tasks:
+            self.source_queue.remove(task.hq_task_id)
         for i in task.input_files:
             self.filestager.mark_complete(i)
         outs = []
         for output in task.output_files:
-            self.filestager.mark_usage(output, n=self.graph.out_degree(task.task))
+            n_consumers = self.graph.out_degree(task.task) if task.task else 1
+            self.filestager.mark_usage(output, n=n_consumers)
             output_len = pq.read_metadata(output).num_rows
             outs.append(StreamBatch(length=output_len, data=output))
         return outs if len(outs) > 1 else outs[0]
@@ -179,11 +222,14 @@ class HyperQueueStreamExecutor(StreamingGraphExecutor):
         task_ids = [task.hq_task_id for task in pending_task_list]
         states = self.hq_job.get_tasks(task_ids=task_ids)
         self.hq_completion_queue.clear()
+        self.hq_running_queue.clear()
         for state in states:
-            if state["state"] == "completed":
-                self.hq_completion_queue.add(state["id"])
             if state["state"] == "failed":
-                raise ValueError(f"Task {state['id']} failed")
+                raise RuntimeError(f"Task {state['id']} failed")
+            elif state["state"] == "finished":
+                self.hq_completion_queue.add(state["id"])
+            elif state["state"] == "running":
+                self.hq_running_queue.add(state["id"])
         if self.hq_completion_queue:
             return
         time.sleep(self.poll_interval)

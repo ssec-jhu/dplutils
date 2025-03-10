@@ -6,8 +6,8 @@ import dplutils.pipeline.hyperqueue
 
 class TestClient:
     def __init__(self, name):
-        pass
         self.task_id = -1
+        self.job_id = 1
 
     def add_task(self, args, input=None, **kwargs):
         dplutils.pipeline.hyperqueue.hyperqueue_main(input)
@@ -15,10 +15,13 @@ class TestClient:
         return self.task_id
 
     def get_tasks(self, task_ids=[]):
-        return [{"id": i, "state": "completed"} for i in task_ids]
+        return [{"id": i, "state": "finished"} for i in task_ids]
 
     def close_job(self):
         self.job_closed = True
+
+    def cancel_job(self):
+        self.job_cancelled = True
 
 
 @pytest.fixture(autouse=True)
