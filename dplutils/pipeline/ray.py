@@ -202,6 +202,10 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
             f"Resources for <{task.name}>: {task_r}, scheduled: {self.sched_resources}, cluster total: {cluster_r}"
         )
         for k in task_r:
+            # dont consider resources that are not requested. In some cases they
+            # will be specified as zero to override a default
+            if task_r[k] <= 0:
+                continue
             avail = cluster_r.get(ck_map.get(k, k), 0) - self.sched_resources.get(k, 0)
             # Overcommit the resources for all downstream tasks to ensure that
             # upstream tasks cant starve those that don't presently fit. Source
