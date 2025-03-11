@@ -11,7 +11,7 @@ import dplutils.pipeline.staging
 from dplutils.pipeline.xpy import xpy_main
 
 
-def hq_subprocess_check_output_mock(cmd, *args, input=None, task_state = "finished", **kwargs):
+def hq_subprocess_check_output_mock(cmd, *args, input=None, task_state="finished", **kwargs):
     cmd_string = " ".join(cmd)
     if cmd_string.startswith("hq --output-mode=json job open"):
         return b'{"id": 1}'
@@ -40,12 +40,16 @@ class TestHyperQueueExecutor(PipelineExecutorTestSuite):
 def test_executor_errors_for_task_states(monkeypatch, task_state, dummy_steps):
     def mock_fail(*args, **kwargs):
         return hq_subprocess_check_output_mock(*args, task_state=task_state, **kwargs)
+
     monkeypatch.setattr(subprocess, "check_output", mock_fail)
+
     # in the case of running, stop the sleep so we don't go on forever
     class STOP(Exception):
         pass
+
     def terminate_sleep(*args, **kwargs):
         raise STOP()
+
     monkeypatch.setattr(time, "sleep", terminate_sleep)
     pl = dplutils.pipeline.hyperqueue.HyperQueueStreamExecutor(dummy_steps, poll_interval=0)
     if task_state == "running":
@@ -56,17 +60,21 @@ def test_executor_errors_for_task_states(monkeypatch, task_state, dummy_steps):
         with pytest.raises(RuntimeError, match="Task .* failed"):
             next(pl.run())
 
+
 def test_hq_client_proc_error(monkeypatch):
     def proc_raise_error(*args, **kwargs):
         raise subprocess.CalledProcessError(1, "cmd", output=b"error")
+
     monkeypatch.setattr(subprocess, "check_output", proc_raise_error)
     with pytest.raises(ValueError):
         dplutils.pipeline.hyperqueue.HyperQueueClient(name="test")
+
 
 def test_hq_client_job_not_open():
     client = dplutils.pipeline.hyperqueue.HyperQueueClient(name="test", auto_open=False)
     with pytest.raises(ValueError):
         client.add_task([])
+
 
 def test_hq_client_close_open_job(monkeypatch):
     client = dplutils.pipeline.hyperqueue.HyperQueueClient(name="test")
@@ -84,4 +92,3 @@ def test_hq_replaces_bare_gpu_resource(monkeypatch):
     monkeypatch.setattr(client, "_do_hq", mock)
     client.add_task([], resources={"gpus": 1})
     assert "--resource=gpus/nvidia=1" in mock.call_args[0][0]
-
