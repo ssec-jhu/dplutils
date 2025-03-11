@@ -27,7 +27,7 @@ class HyperQueueClient:
         if auto_open:
             self._open_job()
 
-    def _do_hq(self, args, input=None):
+    def _do_hq(self, args, input=None, expect_out=True):
         cmd = [self.binary, "--output-mode=json"] + args
         try:
             call_output = subprocess.check_output(cmd, input=input)
@@ -36,9 +36,11 @@ class HyperQueueClient:
             raise ValueError(f"Error in hyperqueue command: {output}") from exc
         # Unfortunately, instead of printing to stderr, some messages are
         # printed to stdout prior to the json blob. Here we look for the start.
-        json_starts = [call_output.find(b"{"), call_output.find(b"[")]
-        json_start = min(i for i in json_starts if i >= 0)
-        return json.loads(call_output[json_start:])
+        if expect_out:
+            json_starts = [call_output.find(b"{"), call_output.find(b"[")]
+            json_start = min(i for i in json_starts if i >= 0)
+            return json.loads(call_output[json_start:])
+        return None
 
     @property
     def job_id(self):
@@ -53,10 +55,10 @@ class HyperQueueClient:
         self._job_id = self._do_hq(["job", "open", "--name", self.name])["id"]
 
     def close_job(self):
-        self._do_hq(["job", "close", str(self.job_id)])
+        self._do_hq(["job", "close", str(self.job_id)], expect_out=False)
 
     def cancel_job(self):
-        self._do_hq(["job", "cancel", str(self.job_id)])
+        self._do_hq(["job", "cancel", str(self.job_id)], expect_out=False)
 
     def add_task(self, args, input=None, priority=0, resources={}):
         task_cmd = ["submit", f"--job={self.job_id}", f"--priority={priority}"]
@@ -97,6 +99,20 @@ class HyperTaskQueue:
 
 
 class HyperQueueStreamExecutor(XPyStreamExecutor):
+    """Executor using hyperqueue for task scheduling.
+
+    Hyperqueue has task priorities, supports default and arbitrary user-defined
+    resources, and provides scheduling over remote systems - thus making it
+    ideal for scheduling within this library. It also provides conveniences for
+    allocating workers via HPC schedulers such as SLURM/PBS.
+
+    Hyperqueue does not provide global memory or cross-task communications, but
+    rather depends on shared storage infrastructure, so this is based off the
+    XPy executor, which uses file system staging for data transfer between
+    tasks.
+
+    See also: https://it4innovations.github.io/hyperqueue
+    """
     def __init__(self, *args, poll_interval=2, **kwargs):
         super().__init__(*args, **kwargs)
         self.poll_interval = poll_interval
@@ -106,6 +122,20 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
         self.hq_job = HyperQueueClient(name=self.run_id)
         self.task_queue = HyperTaskQueue()
         self._task_ranks = self.graph.rank_nodes()
+
+    def execute(self):
+        # We try our best to stop the job if anything goes wrong, or a user
+        # issues INT or C-c, but in some cases a job may be left running which
+        # can be canceled via the hq command. In some cases the scheduler such
+        # as slurm will clean up anyhow, but we could handle TERM?
+        try:
+            for batch in super().execute():
+                yield batch
+        except (Exception, KeyboardInterrupt):
+            self.hq_job.cancel_job()
+            raise
+        finally:
+            self.hq_job.close_job()
 
     def submit_task_execution(self, task: PipelineTask, cmd: list[str], pickled_bundle: bytes):
         # For split tasks, which are marked by having task of None, we use the
