@@ -57,7 +57,22 @@ class XPyStreamExecutor(StreamingGraphExecutor):
         return replace(batch, data=df)
 
     @abstractmethod
-    def submit_task_execution(self, task: PipelineTask, cmd: list[str], pickled_bundle: bytes):
+    def submit_task_execution(self, task: PipelineTask, cmd: list[str], pickled_bundle: bytes) -> Any:
+        """Submit the requested command for execution to underlying scheduler.
+
+        The pickled bundle is a cloudpickle'd :py:class:`XPyRemoteBundle`
+        instance which must be unpacked and executed as per the provided
+        `xpy_main` function (which see). The command in cmd provides a list of
+        arguments that can be used to perform that call via subprocess or other
+        means.
+
+        If the provided `task` argument is None, the task represents a split.
+
+        The return value can be anything, but should represent a handle to the
+        task in whatever scheduling system is used. It will be available to the
+        other methods, such as `task_resolve_output` and `poll_tasks` in the
+        `submitted_task_info` field of the `XPyTask` given as arguments.
+        """
         pass
 
     def task_submit(self, task: PipelineTask, df_list):
@@ -107,13 +122,22 @@ def xpy_run_task(bundle: XPyRemoteBundle):
     df_in = pd.concat(bundle.input_files)
     df_out = bundle.function(df_in, **bundle.kwargs)
     if len(bundle.output_files) > 1:
-        for df, of in zip(df_out, bundle.output_files):
+        for df, of in zip(df_out, bundle.output_files, strict = True):
             df.to_parquet(of)
     else:
         df_out.to_parquet(bundle.output_files[0])
 
 
 def xpy_main(data: bytes):
+    """Decode the cloudpickle'd data and run the task.
+
+    This call is made available as a module-level script entry point for running
+    the provided task given as a bundle via stdin. The function specified in the
+    bundle will be run against the input data and the output will be written as
+    a parquet file(s) to the location(s) specified. If the bundle specifies
+    multiple outputs, the function must return that number of outputs as an
+    interable.
+    """
     bundle = cloudpickle.loads(data)
     xpy_run_task(bundle)
 
