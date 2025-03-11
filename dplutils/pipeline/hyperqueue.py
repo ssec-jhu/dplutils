@@ -1,17 +1,11 @@
 import json
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
 
-import cloudpickle
-import pandas as pd
-import pyarrow.parquet as pq
 
-from dplutils.pipeline.stream import StreamBatch, StreamingGraphExecutor
 from dplutils.pipeline.task import PipelineTask
-from dplutils.pipeline.utils import calculate_splits, split_dataframe
 from dplutils.pipeline.xpy import XPyStreamExecutor, XPyTask
 
 
@@ -20,6 +14,7 @@ class HyperQueueClient:
         self.binary = binary
         self.stream = stream
         self.name = name
+        self._job_id = None
         if auto_open:
             self._open_job()
 

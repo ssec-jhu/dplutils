@@ -8,7 +8,7 @@ DEFAULT_STAGING_PATH = Path(os.environ.get("DPL_STAGING_PATH", tempfile.gettempd
 
 
 class FileStager:
-    def __init__(self, staging_root):
+    def __init__(self, staging_root = None):
         if staging_root is None:
             self.staging_root = DEFAULT_STAGING_PATH / str(uuid.uuid1())
         elif not Path(staging_root).is_absolute():

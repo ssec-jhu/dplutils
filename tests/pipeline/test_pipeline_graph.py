@@ -120,7 +120,7 @@ def test_graph_walk_with_priority():
         ("branchmultiout", {"c": 0, "e": 0, "g": 0, "f": 1, "d": 2, "b": 3, "a": 4}),
     ],
 )
-def test_x(graph, expected):
+def test_graph_ranking(graph, expected):
     g = graph_suite()[graph]
     p = PipelineGraph(g.edges)
     ranked = p.rank_nodes()
