@@ -1,15 +1,15 @@
 import json
 import os
 import subprocess
-import tempfile
 import time
 import uuid
 
+from dplutils.pipeline import utils
 from dplutils.pipeline.task import PipelineTask
 from dplutils.pipeline.xpy import XPyStreamExecutor, XPyTask
 
 DEFAULT_GPU_PROVIDER = os.environ.get("DPL_HQ_DEFAULT_GPU_PROVIDER", "nvidia")
-DEFAULT_TEMP_DIR = os.environ.get("DPL_HQ_TEMP_DIR", tempfile.gettempdir())
+DEFAULT_TEMP_DIR = os.environ.get("DPL_HQ_TEMP_DIR", utils.TEMP_DIR)
 
 
 class HyperQueueClient:
@@ -18,6 +18,7 @@ class HyperQueueClient:
     This client is designed only for use with the HyperQueueStreamExecutor, so
     implements only the required commands and output handling for those.
     """
+
     def __init__(self, binary="hq", name=None, stream=True, auto_open=True):
         self.binary = binary
         self.stream = stream

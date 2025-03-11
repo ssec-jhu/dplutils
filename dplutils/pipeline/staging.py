@@ -1,10 +1,11 @@
 import os
-import tempfile
 import uuid
 from collections import defaultdict
 from pathlib import Path
 
-DEFAULT_STAGING_PATH = Path(os.environ.get("DPL_STAGING_PATH", tempfile.gettempdir()))
+from dplutils.pipeline import utils
+
+DEFAULT_STAGING_PATH = Path(os.environ.get("DPL_STAGING_PATH", utils.TEMP_DIR))
 
 
 class FileStager:
