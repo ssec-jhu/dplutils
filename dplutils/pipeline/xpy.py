@@ -122,7 +122,7 @@ def xpy_run_task(bundle: XPyRemoteBundle):
     df_in = pd.concat(bundle.input_files)
     df_out = bundle.function(df_in, **bundle.kwargs)
     if len(bundle.output_files) > 1:
-        for df, of in zip(df_out, bundle.output_files, strict = True):
+        for df, of in zip(df_out, bundle.output_files, strict=True):
             df.to_parquet(of)
     else:
         df_out.to_parquet(bundle.output_files[0])

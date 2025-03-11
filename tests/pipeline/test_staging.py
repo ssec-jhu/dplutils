@@ -1,5 +1,6 @@
 from dplutils.pipeline.staging import DEFAULT_STAGING_PATH, FileStager
 
+
 def test_staging(tmp_path):
     stager = FileStager(tmp_path)
     assert tmp_path.is_dir()
@@ -12,6 +13,7 @@ def test_staging(tmp_path):
 
     stager = FileStager("test_root")
     assert stager.get("test").parent == DEFAULT_STAGING_PATH / "test_root"
+
 
 def test_staging_multiple_get(tmp_path):
     stager = FileStager(tmp_path)

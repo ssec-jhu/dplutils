@@ -1,16 +1,24 @@
 import json
+import os
 import subprocess
 import tempfile
 import time
-from pathlib import Path
-
+import uuid
 
 from dplutils.pipeline.task import PipelineTask
 from dplutils.pipeline.xpy import XPyStreamExecutor, XPyTask
 
+DEFAULT_GPU_PROVIDER = os.environ.get("DPL_HQ_DEFAULT_GPU_PROVIDER", "nvidia")
+DEFAULT_TEMP_DIR = os.environ.get("DPL_HQ_TEMP_DIR", tempfile.gettempdir())
+
 
 class HyperQueueClient:
-    def __init__(self, binary="hq", name=None, stream=None, auto_open=True):
+    """Simple client wrapping necessary commands from hyperqueue shell.
+
+    This client is designed only for use with the HyperQueueStreamExecutor, so
+    implements only the required commands and output handling for those.
+    """
+    def __init__(self, binary="hq", name=None, stream=True, auto_open=True):
         self.binary = binary
         self.stream = stream
         self.name = name
@@ -25,6 +33,8 @@ class HyperQueueClient:
         except subprocess.CalledProcessError as exc:
             output = exc.output.decode()
             raise ValueError(f"Error in hyperqueue command: {output}") from exc
+        # Unfortunately, instead of printing to stderr, some messages are
+        # printed to stdout prior to the json blob. Here we look for the start.
         json_starts = [call_output.find(b"{"), call_output.find(b"[")]
         json_start = min(i for i in json_starts if i >= 0)
         return json.loads(call_output[json_start:])
@@ -36,9 +46,9 @@ class HyperQueueClient:
         return self._job_id
 
     def _open_job(self):
-        self.stream = self.stream or tempfile.mkdtemp()
-        self.name = self.name or Path(self.stream).name
-        self.task_counter = -1
+        self.name = self.name or f"{uuid.uuid1()}"
+        self.stream_name = f"{DEFAULT_TEMP_DIR}/hq-stream-{self.name}"
+        self.task_counter = -1  # tasks start at 0
         self._job_id = self._do_hq(["job", "open", "--name", self.name])["id"]
 
     def close_job(self):
@@ -48,19 +58,25 @@ class HyperQueueClient:
         self._do_hq(["job", "cancel", str(self.job_id)])
 
     def add_task(self, args, input=None, priority=0, resources={}):
-        task_cmd = ["submit", f"--job={self.job_id}", f"--stream={self.stream}", f"--priority={priority}"]
+        task_cmd = ["submit", f"--job={self.job_id}", f"--priority={priority}"]
+        if self.stream:
+            task_cmd += [f"--stream={self.stream_name}"]
         if input is not None:
             task_cmd += ["--stdin"]
         for resource, request in resources.items():
             if request is None:
                 continue
             if resource == "gpus":
-                resource = "gpus/nvidia"
+                # GPUs in hq get autodetected with a provider flag, custom
+                # resources can specifically request this of course, but bare
+                # GPU requests will use a default provider.
+                resource = f"gpus/{DEFAULT_GPU_PROVIDER}"
             task_cmd += [f"--resource={resource}={request}"]
         task_cmd += args
         self._do_hq(task_cmd, input=input)
-        # this means we are not thread safe and tasks cannot be added to the
-        # same job from outside this client
+        # May be a bug, but the submit command returns the job not task id, so
+        # we have to track it. This means that we cannot add tasks to the open
+        # job from outside this app.
         self.task_counter += 1
         return self.task_counter
 
@@ -68,6 +84,7 @@ class HyperQueueClient:
         cmd = ["task", "list", str(self.job_id)]
         if task_ids:
             cmd += ["--tasks", ",".join(str(i) for i in task_ids)]
+        # Should return in the form of [{"id": 1, "state": "running"}, ...]
         return self._do_hq(cmd)[str(self.job_id)]
 
 
@@ -90,9 +107,16 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
         self._task_ranks = self.graph.rank_nodes()
 
     def submit_task_execution(self, task: PipelineTask, cmd: list[str], pickled_bundle: bytes):
-        if task is None:  # split task
+        # For split tasks, which are marked by having task of None, we use the
+        # highest priority since they are expected to operate quickly and feed
+        # to generally higher priority tasks.
+        if task is None:
             return self.hq_job.add_task(cmd, input=pickled_bundle, priority=2)
         resources = {"cpus": task.num_cpus, "gpus": task.num_gpus, **task.resources}
+        # HQ allows signed priority values, higher is executed quicker so
+        # inverse of our task rank. The priority enables us to submit tasks for
+        # all pending non-source data and they will execute in the expected
+        # order as resources become available.
         priority = 1 - self._task_ranks[task]
         task_id = self.hq_job.add_task(cmd, input=pickled_bundle, priority=priority, resources=resources)
         if task in self.graph.source_tasks:
@@ -112,7 +136,8 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
             if sources_waiting > 10:
                 return False
         # Otherwise we just queue with priority related to distance from the
-        # sink so tasks are always submittable
+        # sink so tasks are always submittable and more downstream tasks will
+        # execute first.
         return True
 
     def task_resolve_output(self, task):
@@ -134,4 +159,8 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
                 self.task_queue.running.add(state["id"])
         if self.task_queue.finished:
             return
+        # There is a job wait command, but this blocks until ALL tasks complete,
+        # which is not what we want. The sleep here introduces some latency to
+        # scheduling, however given that we can submit many tasks at once this
+        # should be very little overhead even at several seconds.
         time.sleep(self.poll_interval)
