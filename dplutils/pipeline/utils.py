@@ -1,4 +1,9 @@
+import os
+import tempfile
+
 import numpy as np
+
+TEMP_DIR = os.environ.get("DPL_TEMP_DIR", tempfile.gettempdir())
 
 
 def dict_from_coord(coord, value):
