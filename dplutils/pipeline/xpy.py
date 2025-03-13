@@ -103,7 +103,7 @@ class XPyStreamExecutor(StreamingGraphExecutor):
         task_info = self.submit_task_execution(None, cmd, cloudpickle.dumps(bundle))
         return XPyTask(task=None, submitted_task_info=task_info, input_files=[batch.data], output_files=output_files)
 
-    def task_resolve_output(self, task):
+    def task_resolve_output(self, task: XPyTask):
         for i in task.input_files:
             self.stager.mark_complete(i)
         outs = []
@@ -116,11 +116,25 @@ class XPyStreamExecutor(StreamingGraphExecutor):
 
 
 def xpy_run_task(bundle: XPyRemoteBundle):
+    """Run the task specified in the bundle.
+
+    This handles the reading and concatenation of input files/dataframes and
+    writing of function output to corresponding output file from the bundle.
+    `xpy_main` can be used to run this from a pickled bundle and is the typical
+    target for remote calls.
+    """
     for i in range(len(bundle.input_files)):
+        # The input files can also be dataframes directly (e.g. in the case of
+        # source batches where the driver has already in-memory) or a mix.
         if isinstance(bundle.input_files[i], Path):
             bundle.input_files[i] = pd.read_parquet(bundle.input_files[i])
     df_in = pd.concat(bundle.input_files)
+
     df_out = bundle.function(df_in, **bundle.kwargs)
+
+    # output files would be more than one in the case of split, where we require
+    # each element to correspond with an output created by the function (hence
+    # strict=True on zip)
     if len(bundle.output_files) > 1:
         for df, of in zip(df_out, bundle.output_files, strict=True):
             df.to_parquet(of)
