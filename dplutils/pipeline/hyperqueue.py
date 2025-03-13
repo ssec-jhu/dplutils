@@ -113,6 +113,7 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
 
     See also: https://it4innovations.github.io/hyperqueue
     """
+
     def __init__(self, *args, poll_interval=2, **kwargs):
         super().__init__(*args, **kwargs)
         self.poll_interval = poll_interval
@@ -171,7 +172,7 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
         # execute first.
         return True
 
-    def task_resolve_output(self, task):
+    def task_resolve_output(self, task: XPyTask):
         if task.task in self.graph.source_tasks:
             self.task_queue.sourced.remove(task.submitted_task_info)
         return super().task_resolve_output(task)
