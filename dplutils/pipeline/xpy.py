@@ -150,7 +150,7 @@ def xpy_main(data: bytes):
     bundle will be run against the input data and the output will be written as
     a parquet file(s) to the location(s) specified. If the bundle specifies
     multiple outputs, the function must return that number of outputs as an
-    interable.
+    iterable.
     """
     bundle = cloudpickle.loads(data)
     xpy_run_task(bundle)
