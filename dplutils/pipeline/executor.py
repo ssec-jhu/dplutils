@@ -44,9 +44,9 @@ class PipelineExecutor(ABC):
 
     def __str__(self) -> str:
         desc = "Tasks:\n" + "\n".join([f"  - {task}" for task in self.graph]) + "\n"
-        required_context = set(itertools.chain.from_iterable(task.context_kwargs.keys() for task in self.graph)).union(
-            self.ctx.keys()
-        )
+        required_context = set(
+            itertools.chain.from_iterable(task.context_kwargs.values() for task in self.graph)
+        ).union(self.ctx.keys())
         if required_context:
             desc += "Required context:\n"
             for key in sorted(required_context):
