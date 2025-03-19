@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 from dplutils.pipeline import utils
 from dplutils.pipeline.task import PipelineTask
@@ -50,7 +51,12 @@ class HyperQueueClient:
 
     def _open_job(self):
         self.name = self.name or f"{uuid.uuid1()}"
-        self.stream_name = f"{DEFAULT_TEMP_DIR}/hq-stream-{self.name}"
+        if self.stream:
+            self.stream_name = f"{DEFAULT_TEMP_DIR}/hq-stream-{self.name}"
+            # The stream name refers to a directory, which must exist. HQ workers
+            # write to files within this directory, and in general it should be on a
+            # shared filesystem, to be centrally accessible.
+            Path(self.stream_name).mkdir(exist_ok=True, parents=True)
         self.task_counter = -1  # tasks start at 0
         self._job_id = self._do_hq(["job", "open", "--name", self.name])["id"]
 
@@ -183,8 +189,8 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
         self.task_queue.finished.clear()
         self.task_queue.running.clear()
         for state in states:
-            if state["state"] == "failed":
-                raise RuntimeError(f"Task {state['id']} failed")
+            if state["state"] in ["failed", "cancelled"]:
+                raise RuntimeError(f"Task {state['id']} in non-recoverable state: {state['state']}")
             elif state["state"] == "finished":
                 self.task_queue.finished.add(state["id"])
             elif state["state"] == "running":
