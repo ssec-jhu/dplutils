@@ -10,106 +10,154 @@
 
 ![SSEC-JHU Logo](docs/_static/SSEC_logo_horiz_blue_1152x263.png)
 
-Distributed Data Pipeline Utilities
+This package provides python utilities to define and execute graphs of tasks
+that operate on and produce dataframes in a batched-streaming manner. The
+primary aims are as follows:
 
-# Usage:
+* Operate on an indefinite stream of batches of input data.
+* Execute tasks in a distributed fashion using configurable execution backends
+  (e.g. Ray).
+* Schedule resources on a per-task basis.
+* Configurable batching: enable co-location for high-overhead tasks or maximal
+  spread for resource intensive tasks.
+* Provide a simple interface to create tasks and insert them into a pipeline.
+* Provide validations to help ensure tasks are correctly configured prior to
+  execution (potentially with high latency).
 
-Check out the docs at https://dplutils.readthedocs.io/en/stable/
+Discovery pipelines that generate input samples on-the-fly are particularly well
+suited for this package, though input can be taken from any source, including
+on-disk tables.
 
-## Setup locally
+This package also includes utilities for observing pipelines using metrics tools
+such as mlflow or aim, and provides functionality for making simple CLI
+interfaces from pipeline definitions.
 
-```
+# Quick Start
+
+Getting up and running is easy: simply install the package:
+
+```sh
 pip install dplutils
 ```
 
-You can create pipelines and run in a local ray cluster as in the example below. Either in client mode running directly
-in an interactive python session, or by submission to a locally running ray cluster.
+Then define the tasks and connect them into a pipeline:
 
-Further details on running a pipeline are listed below in the using the docker container environment.
+```py
+def generate_sample(df):
+  return df.assign(sample = np.random.random(len(df)))
 
-## Setup Using Docker
+def round_sample(df, decimals=1):
+  return df.assign(rounded = df['sample'].round(decimals))
 
-Get (or build, see below) docker image
+def calc_residual(df):
+  return df.assign(residual = df['rounded'] - df['x'])
 
-```
-docker pull ghcr.io/ssec-jhu/dplutils:latest
-```
-
-### Start cluster
-
-To start a cluster, start one ray head node and any number of worker nodes on network-connected hosts. To start the head
-node, running the container using the docker engine, this can be used:
-
-```
-docker run -d -n rayhead -v /path/to/data:/data --net host \
-  dplutils /opt/startray.sh --head --block
+pipeline = PipelineGraph([
+  PipelineTask('generate', generate_sample)
+  PipelineTask('round', round_sample, batch_size=10)
+  PipelineTask('resid', calc_residual, num_cpus=2)
+])
 ```
 
-which will start the head node (blocking in order that the container stay up). The ``--net host`` option is given to
-expose all open ports on the host as ray requires several bi-directional connections to workers. The `-v ...` option is
-an example of mounted a local path into the container so it can access files (for example directory containing source
-data, and output directory). It also exposes a dashboard at 8265 that can be viewed using a web browser.
+The we can execute the pipeline and write results with an executor that suits
+our needs, for example executing the above pipeline using the Ray executor:
 
-On the workers, similarly start using the command:
-
-```
-docker run -d -v /path/to/data:/data --net host \
-  dplutils /opt/startray.sh --block --address={head-node}:6379
+```py
+executor = RayStreamGraphExecutor(pipeline).set_config('round.kwargs.decimals', 2)
+for result_batch in executor.run():
+  print(result_batch)
 ```
 
-For hosts with custome resources (e.g. other than those that get auto-detected such as CPUs and GPUs), you can pass
-resources to the start command:
+Or we can set it up for CLI based execution:
 
-```
-docker run -d --net host -v /path/to/data:/data \
-  dplutils /opt/startray.sh --block --address={head-node}:6379 \
-  --resources '{"mycustomresource": 1}'
-```
-
-In the dashboard you should see the workers listed in the clusters tab.
-
-## Start pipeline
-
-Pipelines can be run via interactive python sessions or asynchronously. In an interactive session one would import or
-define a pipeline within the session and then call ``run`` or ``writeto`` method to kick off execution. For longer
-running or production jobs it is generally advisable to submit a job to ray. dplutils contains helpers for making it
-easy to run configurable pipelines via the command line. For example, assuming a script like:
-
-```
-from dplutils.pipeline import PipelineTask
-from dplutils.pipeline.ray import RayDataPipelineExecutor
-from dplutils.cli import cli_run
+```py
+executor = RayStreamGraphExecutor(pipeline)
 
 if __name__ == '__main__':
-   pl = RayDataPipelineExecutor([PipelineTask('task1', lambda x: x.assign(newcol=1))])
-   cli_run(pl)
+  cli_run(executor)
 ```
 
-We can submit the job in the following way, assuming a container is already running and has had the ray head node
-started (here named `rayhead`; see above):
+then run out module with parameters as needed. The CLI based run will write the
+output to a parquet table at a specified location:
 
+```sh
+python -m ourmodule -o /path/to/outdir --set-config round.batch_size=5
 ```
-docker exec -it rayhead ray job submit -- python /path/to/script.py -o outdir
+
+The above is of course a trivial example to demonstrate the structure and
+simplicity of defining pipelines and how they operate on configurable-sized
+batches represented as dataframes. For more information on defining tasks, their
+inputs, seeding the input tasks, more complex graph structures and distributed
+execution, among other topics, see the documentation at:
+https://dplutils.readthedocs.io/en/stable/.
+
+# Scaling out
+
+One of the goals of this project simplify the scaling out of connected tasks on
+a variety of systems. PipelineExecutors
+[PipelineExecutor](https://dplutils.readthedocs.io/en/stable/generated/dplutils.pipeline.PipelineExecutor.html#dplutils.pipeline.PipelineExecutor)
+are responsible for this - this package provides a framework for adding
+executors based on appropriate underlying scheduling/execution systems and
+provides some implementations, for example using Ray
+[RayStreamGraphExecutor](https://dplutils.readthedocs.io/en/stable/generated/dplutils.pipeline.ray.RayStreamGraphExecutor.html).
+Setup required to properly configure an executor for scaling depends on the
+backend used, for example ray relies on having a cluster previously bootstrapped
+(see https://docs.ray.io/en/latest/cluster/getting-started.html), though can
+operate locally without any prior setup.
+
+# Resource specifications
+
+Another primary goal is to arrange for resource dependencies to be met by the
+execution environment for a particular task. Resources such as number of CPUs or
+GPUs are natural targets and supported by many systems. We also want to support
+arbitrary resource requests, for example if a task requires a large local
+database on fast disks, this might be available only on one node in a cluster. A
+custom resource can be used to ensure that batches of a particular task always
+execute on the environment that has that resource.
+
+This ability depends on the executor backend to support it, so executors
+typically only make sense for such systems - of which Ray is one.
+
+
+For instance, if a task required a database as described above, the task might
+be defined in the following manner:
+
+```py
+PipelineTask('bigdboperation', function_needs_big_db, resources={'bigdb': 1})
 ```
 
-Note that as this is run within the container environment, the paths are what is exposed within and not necessarily the
-same as in the host environment
+And if using the Ray executor, then at least one worker in the cluster that has
+local fast disks with the big database resident would be started similar to:
 
-The progress and log files can be viewed on the ray dashboard, and generated data will be available as a parquet table
-written to ``/outdir`` (one file per batch, as they are completed)
+```sh
+ray start --address {head-ip} --resources '{"bigdb": 1}'
+```
 
+In other execution systems, the worker might be started in a different manner,
+but the task definition could remain as-is, enabling easily swapping the
+execution environment depending on the situation.
 
 # Installation, Build, & Run instructions
 
-An "official" docker image is provided based on the latest release, but for development or those needing a custom build
-or running outside of a containerized environment, below are instructions for installing the code from the source
-repository.
+If you need to make modifications to the source code, follow the steps below to
+get the source and run tests. The process is simple and we use Tox to manage
+test and build environments. We welcome any contributions, please open a pull
+request!
 
 ## Setup
 
+Clone this repository locally:
+
+```sh
+git clone https://github.com/ssec-jhu/dplutils.git
+cd dplutils
+```
+
 Install dependencies:
 
-* ``pip install -r requirements/dev.txt``
+```sh
+pip install -r requirements/dev.txt
+```
 
 ## Tests
 
