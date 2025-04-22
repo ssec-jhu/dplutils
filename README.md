@@ -43,6 +43,9 @@ pip install dplutils
 Then define the tasks and connect them into a pipeline:
 
 ```py
+import numpy as np
+from dplutils.pipeline import PipelineGraph, PipelineTask
+
 def generate_sample(df):
   return df.assign(sample = np.random.random(len(df)))
 
@@ -50,12 +53,12 @@ def round_sample(df, decimals=1):
   return df.assign(rounded = df['sample'].round(decimals))
 
 def calc_residual(df):
-  return df.assign(residual = df['rounded'] - df['x'])
+  return df.assign(residual = df['rounded'] - df['sample'])
 
 pipeline = PipelineGraph([
-  PipelineTask('generate', generate_sample)
-  PipelineTask('round', round_sample, batch_size=10)
-  PipelineTask('resid', calc_residual, num_cpus=2)
+  PipelineTask('generate', generate_sample),
+  PipelineTask('round', round_sample, batch_size=10),
+  PipelineTask('resid', calc_residual, num_cpus=2),
 ])
 ```
 
@@ -63,9 +66,12 @@ The we can execute the pipeline and write results with an executor that suits
 our needs, for example executing the above pipeline using the Ray executor:
 
 ```py
+from dplutils.pipeline.ray import RayStreamGraphExecutor
+
 executor = RayStreamGraphExecutor(pipeline).set_config('round.kwargs.decimals', 2)
 for result_batch in executor.run():
   print(result_batch)
+  break  # otherwise it will - by design - run indefinitely!
 ```
 
 Or we can set it up for CLI based execution:
@@ -78,7 +84,8 @@ if __name__ == '__main__':
 ```
 
 then run out module with parameters as needed. The CLI based run will write the
-output to a parquet table at a specified location:
+output to a parquet table at a specified location (below assumes code is in
+`ourmodule.py`):
 
 ```sh
 python -m ourmodule -o /path/to/outdir --set-config round.batch_size=5
@@ -116,7 +123,8 @@ custom resource can be used to ensure that batches of a particular task always
 execute on the environment that has that resource.
 
 This ability depends on the executor backend to support it, so executors
-typically only make sense for such systems - of which Ray is one.
+implementations typically only make sense for such systems - of which Ray is
+one.
 
 
 For instance, if a task required a database as described above, the task might
