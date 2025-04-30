@@ -10,6 +10,14 @@
 
 ![SSEC-JHU Logo](docs/_static/SSEC_logo_horiz_blue_1152x263.png)
 
+* [About](#About)
+* [Quick Start](#quick-start)
+* [Scaling Out](#scaling-out)
+* [Resource Specification](#resource-specifications)
+* [Building and Development](#building-and-development)
+
+# About
+
 This package provides python utilities to define and execute graphs of tasks
 that operate on and produce dataframes in a batched-streaming manner. The
 primary aims are as follows:
@@ -40,12 +48,14 @@ Getting up and running is easy: simply install the package:
 pip install dplutils
 ```
 
-Then define the tasks and connect them into a pipeline:
+Then define the tasks, connect them into a pipeline, and then iterate over the
+output dataframes:
 
 ```py
 import numpy as np
 from dplutils.pipeline import PipelineGraph, PipelineTask
 
+# Definitions of task code - note all take dataframe as first argument and return a dataframe
 def generate_sample(df):
   return df.assign(sample = np.random.random(len(df)))
 
@@ -55,17 +65,14 @@ def round_sample(df, decimals=1):
 def calc_residual(df):
   return df.assign(residual = df['rounded'] - df['sample'])
 
+# Connect them together in an execution graph (along with execution metadata)
 pipeline = PipelineGraph([
   PipelineTask('generate', generate_sample),
   PipelineTask('round', round_sample, batch_size=10),
   PipelineTask('resid', calc_residual, num_cpus=2),
 ])
-```
 
-The we can execute the pipeline and write results with an executor that suits
-our needs, for example executing the above pipeline using the Ray executor:
-
-```py
+# Run the tasks and iterate over the outputs, here using the Ray execution framework
 from dplutils.pipeline.ray import RayStreamGraphExecutor
 
 executor = RayStreamGraphExecutor(pipeline).set_config('round.kwargs.decimals', 2)
@@ -74,7 +81,9 @@ for result_batch in executor.run():
   break  # otherwise it will - by design - run indefinitely!
 ```
 
-Or we can set it up for CLI based execution:
+As an alternative to iterating over batches directly as above, we can use the
+CLI utilities to run the given executor as a tool. The helper arranges for all
+options so we just need to define the desired executor:
 
 ```py
 executor = RayStreamGraphExecutor(pipeline)
@@ -83,7 +92,7 @@ if __name__ == '__main__':
   cli_run(executor)
 ```
 
-then run out module with parameters as needed. The CLI based run will write the
+then run our module with parameters as needed. The CLI based run will write the
 output to a parquet table at a specified location (below assumes code is in
 `ourmodule.py`):
 
@@ -142,10 +151,10 @@ ray start --address {head-ip} --resources '{"bigdb": 1}'
 ```
 
 In other execution systems, the worker might be started in a different manner,
-but the task definition could remain as-is, enabling easily swapping the
+but the task definition could remain as-is, enabling easy swapping of the
 execution environment depending on the situation.
 
-# Installation, Build, & Run instructions
+# Building and Development
 
 If you need to make modifications to the source code, follow the steps below to
 get the source and run tests. The process is simple and we use Tox to manage
