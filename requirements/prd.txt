@@ -1,4 +1,4 @@
-ray[default]==2.44.1
+ray[default]==2.46.0
 async-timeout==4.0.3
 pandas==2.2.2
 pyarrow==17.0.0
