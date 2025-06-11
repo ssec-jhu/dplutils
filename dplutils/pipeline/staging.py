@@ -24,6 +24,7 @@ class FileStager:
             it should be an absolute path or relative to the default staging
             path (environment variable `DPL_STAGING_PATH`).
     """
+
     def __init__(self, staging_root=None):
         if staging_root is None:
             self.staging_root = DEFAULT_STAGING_PATH / str(uuid.uuid1())
