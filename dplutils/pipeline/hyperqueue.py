@@ -195,6 +195,9 @@ class HyperQueueStreamExecutor(XPyStreamExecutor):
                 self.task_queue.finished.add(state["id"])
             elif state["state"] == "running":
                 self.task_queue.running.add(state["id"])
+        # If any are finished, we want the executor to resolve outputs and
+        # schedule more tasks, so return. Otherwise, nothing to do so keep
+        # polling.
         if self.task_queue.finished:
             return
         # There is a job wait command, but this blocks until ALL tasks complete,

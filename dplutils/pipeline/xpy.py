@@ -42,6 +42,11 @@ class XPyStreamExecutor(StreamingGraphExecutor):
     passing pickled data via stdin and communicating inputs and results and as
     files. It is abstract in how the execution command is scheduled,
     implementations must provide the mechanism to invoke the required command.
+
+    This executor uses the :py:class:`FileStager` to manage staging files on a
+    (shared) filesystem and exists primarily to handle the staging and task
+    bundling, while allowing subclasses to focus on implementing the task
+    execution in whatever mechanism is appropriate.
     """
 
     def __init__(self, *args, staging_path=None, **kwargs):
