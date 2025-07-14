@@ -46,6 +46,10 @@ class StreamTask:
     def name(self):
         return self.task.name
 
+    @property
+    def all_pending(self):
+        return self.pending + self.split_pending
+
     def total_pending(self):
         return sum(len(i) for i in [self.data_in, self.pending, self.split_pending])
 
@@ -92,15 +96,22 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         self.stream_graph = nx.relabel_nodes(self.graph, StreamTask)
         self.generator_fun = generator or self.source_generator_fun
 
+    def pre_execute(self):
+        pass
+
+    def output_batch_transform(self, batch: OutputBatch) -> OutputBatch:
+        return batch
+
     def execute(self):
         self.n_sourced = 0
         self.source_exhausted = False
         self.source_generator = self.generator_fun()
+        self.pre_execute()
         while True:
             batch = self.execute_until_output()
             if batch is None:
                 return
-            yield batch
+            yield self.output_batch_transform(batch)
 
     def source_generator_fun(self):
         bid = 0
@@ -109,7 +120,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             bid += 1
 
     def get_pending(self):
-        return [p for tn in self.stream_graph for p in tn.pending]
+        return [p for tn in self.stream_graph for p in tn.all_pending]
 
     def task_exhausted(self, task=None):
         if task is not None and len(task.split_pending) > 0:
