@@ -60,6 +60,30 @@ class PipelineGraph(DiGraph):
         graph.add_edges_from((i, TRM.sink) for i in self.sink_tasks)
         return graph
 
+    def rank_nodes(self, reverse=True, source=None, sink=None):
+        """Rank nodes based on distance from source/sink
+
+        In the default mode, this will give a higher rank (lower number) to
+        nodes that are closer to being complete with the pipeline while favoring
+        those further along.
+        """
+        graph = self.with_terminals()
+        if reverse:
+            graph = graph.reverse()
+        source = source or TRM.sink if reverse else TRM.source
+        sink = sink or TRM.source if reverse else TRM.sink
+        paths = all_simple_paths(graph, source, sink)
+        depths = defaultdict(int)
+        # unlike bfs_edges/bfs_layers, we order by maximum depth from source, to
+        # try and ensure we prioritize outputs while also preferring tasks
+        # further along.
+        for path in paths:
+            for i, node in enumerate(path):
+                if isinstance(node, TRM) or node == source or node == sink:
+                    continue
+                depths[node] = max(depths[node], i - 1)
+        return dict(depths)
+
     def _walk(self, source, back=False, sort_key=None):
         graph = self.with_terminals()
 
@@ -103,17 +127,8 @@ class PipelineGraph(DiGraph):
             tasks in order of callable `sort_key`, which should return a
             sortable object given :class:`PipelineTask` as input.
         """
-        paths = all_simple_paths(self.with_terminals().reverse(), source or TRM.sink, TRM.source)
-        depths = defaultdict(int)
         layers = defaultdict(list)
-        # unlike bfs_edges/bfs_layers, we order by maximum depth from source, to
-        # try and ensure we prioritize outputs while also preferring tasks
-        # further along.
-        for path in paths:
-            for i, node in enumerate(path):
-                if isinstance(node, TRM) or node == source:
-                    continue
-                depths[node] = max(depths[node], i)
+        depths = self.rank_nodes(source=source or TRM.sink)
         for node, depth in depths.items():
             layers[depth].append(node)
         # layers will be keyed by maximum distance from source, containing a

@@ -15,6 +15,7 @@ dependencies = [
     "ray[data]>=2.10",
     "pyarrow",
     "networkx",
+    "cloudpickle",
 ]
 
 [project.optional-dependencies]
