@@ -1,6 +1,6 @@
-ray[default]==2.49.0
+ray[default]==2.49.2
 async-timeout==4.0.3
-pandas==2.3.2
+pandas==2.3.3
 pyarrow==17.0.0
 numpy==1.26.4
 networkx==3.4.2
