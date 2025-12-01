@@ -1,7 +1,7 @@
 -r prd.txt
 
 sphinx==8.2.1
-sphinx-automodapi==0.20.0
+sphinx-automodapi==0.21.0
 sphinx-issues==5.0.1
 nbsphinx==0.9.6
 sphinx_book_theme==1.1.4
