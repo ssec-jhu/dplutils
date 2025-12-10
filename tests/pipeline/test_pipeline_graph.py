@@ -113,6 +113,22 @@ def test_graph_walk_with_priority():
     assert walked == [p.task_map[i] for i in ["g", "e", "c", "f", "d", "b", "a"]]
 
 
+@pytest.mark.parametrize(
+    ("graph", "expected"),
+    [
+        ("simple", {"a": 3, "b": 2, "c": 1, "d": 0}),
+        ("branchmultiout", {"c": 0, "e": 0, "g": 0, "f": 1, "d": 2, "b": 3, "a": 4}),
+    ],
+)
+def test_graph_ranking(graph, expected):
+    g = graph_suite()[graph]
+    p = PipelineGraph(g.edges)
+    ranked = p.rank_nodes()
+    assert min(ranked.values()) == 0
+    ranked = {t.name: r for t, r in ranked.items()}
+    assert ranked == expected
+
+
 def test_single_node_graph_to_list():
     t = PipelineTask("t", 1)
     p = PipelineGraph([t])

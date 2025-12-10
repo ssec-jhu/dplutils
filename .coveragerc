@@ -8,3 +8,4 @@ omit =
 exclude_lines =
     @abstractmethod
     except ImportError:
+    if __name__ == "__main__"
