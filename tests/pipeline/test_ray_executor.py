@@ -1,3 +1,5 @@
+import functools
+
 import pandas as pd
 import pytest
 import ray
@@ -137,6 +139,15 @@ def test_remote_wrapper_sets_name_based_on_task_info():
 
     wrapper = get_remote_wrapper(PipelineTask("taskname", funcname), None)
     assert wrapper.__name__ == "taskname<funcname>"
+
+
+def test_remote_wrapper_sets_name_based_on_task_info_for_partials():
+    def original_funcname(x):
+        pass
+
+    new_funcname = functools.partial(original_funcname, 5)
+    wrapper = get_remote_wrapper(PipelineTask("taskname", new_funcname), None)
+    assert wrapper.__name__ == "taskname<partial>"
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 10])
