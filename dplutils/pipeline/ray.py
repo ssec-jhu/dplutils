@@ -47,7 +47,8 @@ def get_remote_wrapper(task: PipelineTask, context: dict):
 
     # Ray data uses the function name to name the underlying remote tasks, override for the wrapper for better
     # observability
-    wrapper.__name__ = f"{task.name}<{task.func.__name__}>"
+    funcname = getattr(task.func, "__name__", task.func.__class__.__name__)
+    wrapper.__name__ = f"{task.name}<{funcname}>"
     return wrapper
 
 
@@ -178,11 +179,12 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         # configuration and resources will be baked into the remote.
         self.remote_task_map = {}
         for name, task in self.graph.task_map.items():
+            funcname = getattr(task.func, "__name__", task.func.__class__.__name__)
             self.remote_task_map[name] = ray.remote(get_stream_wrapper(task, self.ctx)).options(
                 num_cpus=task.num_cpus,
                 num_gpus=task.num_gpus,
                 resources=task.resources,
-                name=f"{task.name}<{task.func.__name__}>",
+                name=f"{task.name}<{funcname}>",
                 num_returns=2,  # the remote wrapper returns (len of df, df)
             )
 
