@@ -136,3 +136,25 @@ class PipelineGraph(DiGraph):
         for i in sorted(layers.keys()):
             for node in sorted(layers[i], key=sort_key or (lambda x: 0)):
                 yield node
+
+    def common_source(self, node):
+        """Return common source task for a given task, if it exists
+
+        Returns the most recent common ancestor (MRCA) of all immediate
+        predecessors of *node*, including the source sentinal of the graph
+        (TRM.source).
+        """
+        paths = self.paths_between(end_node=node)
+        if len(paths) == 1:
+            return TRM.source
+        # Walk the first path backwards (excluding node itself) and return
+        # the first node that appears in every other path.
+        for n in reversed(paths[0][:-1]):
+            if all(n in p for p in paths[1:]):
+                return n
+
+    def paths_between(self, start_node=None, end_node=None):
+        """Return all paths between source and sink tasks, including the terminals"""
+        start_node = start_node or TRM.source
+        end_node = end_node or TRM.sink
+        return list(all_simple_paths(self.with_terminals(), start_node, end_node))

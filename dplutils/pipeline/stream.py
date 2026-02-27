@@ -1,15 +1,44 @@
 from abc import ABC, abstractmethod
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from enum import Enum
+from sysconfig import get_paths
+from typing import Any, Callable, NamedTuple
 
 import networkx as nx
 import numpy as np
 import pandas as pd
 
 from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
+from dplutils.pipeline.graph import TRM
 from dplutils.pipeline.utils import deque_extract, split_dataframe
+
+class LKind(Enum):
+    TASK = "normal"
+    SPLIT = "split"
+    MERGE = "merge"
+    SOURCE = "source"
+
+
+@dataclass(frozen=True)
+class LineageEntry:
+    """Record of a division or processing event in batch lineage.
+
+    Args:
+      task: structured identifier for this point in the pipeline.
+      num_segments: how many sibling batches exist at this point. 1 for normal
+        processing, N for an N-way split or N-way fan-out.
+      uid: globally unique monotonic counter assigned by the executor. Used as
+        the grouping key for :attr:`join_by_origin` nodes.
+    """
+
+
+    task: str
+    num_segments: int
+    uid: int
+    kind: LKind
+    children: tuple["LineageEntry", ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -27,6 +56,7 @@ class StreamBatch:
 
     length: int
     data: Any
+    _lineage: LineageEntry|None = None
 
 
 @dataclass
@@ -95,6 +125,28 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         # object
         self.stream_graph = nx.relabel_nodes(self.graph, StreamTask)
         self.generator_fun = generator or self.source_generator_fun
+        # by name paths required for each join task, for finding complete origin
+        # We truncate the end node and store as tuple of task names, as the
+        # lineage stores name
+        self._join_task_segments = {}
+        for task in self.stream_graph:
+            if task.task.join_by_origin:
+                task_source = self.stream_graph.common_source(task)
+                segments = self.stream_graph.paths_between(task_source, task)
+                # No need to use join logic with only a single path
+                if len(segments) <= 1:
+                    continue
+                # get the name of the task or None in the case of source,
+                # truncating the end node which is join task itself. name used
+                # for comparison to the lineage entries.
+                segments = [tuple(None if isinstance(t, TRM) else t.name for t in s[:-1]) for s in segments]
+                self._join_task_segments[task] = segments
+
+    def _next_uid(self):
+        """Return the next globally unique lineage entry identifier."""
+        uid = self._uid_counter
+        self._uid_counter += 1
+        return uid
 
     def pre_execute(self):
         pass
@@ -104,6 +156,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
 
     def execute(self):
         self.n_sourced = 0
+        self._uid_counter = 0
         self.source_exhausted = False
         self.source_generator = self.generator_fun()
         self.pre_execute()
@@ -120,7 +173,13 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             bid += 1
 
     def get_pending(self):
-        return [p for tn in self.stream_graph for p in tn.all_pending]
+        # Return the raw opaque handles (.data) from pending StreamBatch objects,
+        # since poll_tasks and implementations expect the raw references.
+        return [p.data for tn in self.stream_graph for p in tn.all_pending]
+
+    def _is_task_ready(self, pending_batch):
+        """Unwrap StreamBatch from pending queue and delegate to implementation."""
+        return self.is_task_ready(pending_batch.data)
 
     def task_exhausted(self, task=None):
         if task is not None and len(task.split_pending) > 0:
@@ -135,21 +194,40 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         # queue. Dataframes for completed sink tasks are returned here in order
         # to prioritize flushing.
         for task in self.stream_graph.walk_fwd():
-            for ready in deque_extract(task.pending, self.is_task_ready):
-                block_info = self.task_resolve_output(ready)
+            for ready in deque_extract(task.pending, self._is_task_ready):
+                block_info = self.task_resolve_output(ready.data)
                 if block_info.length == 0:
                     continue
+
                 if task in self.stream_graph.sink_tasks:
                     self.logger.debug(f"Batch <{task.name}>[l={block_info.length}] completed as output")
                     return OutputBatch(block_info.data, task=task.name)
                 else:
+                    num_neighbors = sum(1 for _ in self.stream_graph.neighbors(task))
+                    block_info._lineage = LineageEntry(
+                        task=task.name,
+                        num_segments=num_neighbors,
+                        uid=self._next_uid(),
+                        kind=LKind.TASK,
+                        children=(ready._lineage,)
+                    )
                     for next_task in self.stream_graph.neighbors(task):
                         self.logger.debug(f"Moving <{task.name}>[l={block_info.length}] to <{next_task.name}>")
                         next_task.data_in.appendleft(block_info)
 
-            for ready in deque_extract(task.split_pending, self.is_task_ready):
+            for ready in deque_extract(task.split_pending, self._is_task_ready):
                 self.logger.debug(f"Splits <{task.name}> completed, moving to input queue")
-                task.data_in.extendleft(self.task_resolve_output(ready))
+                resolved = self.task_resolve_output(ready.data)
+                lineage = LineageEntry(
+                    task=task.name,
+                    num_segments=len(resolved),
+                    uid=self._next_uid(),
+                    kind=LKind.SPLIT,
+                    children=(ready._lineage,)
+                )
+                for split in resolved:
+                    batch = StreamBatch(length=split.length, data=split.data, _lineage=lineage)
+                    task.data_in.appendleft(batch)
         return None
 
     def _feed_source(self, source):
@@ -166,14 +244,100 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             # We feed any generated source to all source tasks similar the way
             # upstream forked outputs broadcast. We add to data_in so that any
             # necessary batching and splitting can be handled by normal procedure.
+            lineage = LineageEntry(num_segments=1, uid=self._next_uid(), task="", kind=LKind.SOURCE)
             for task in self.stream_graph.source_tasks:
-                task.data_in.append(StreamBatch(data=next_df, length=len(next_df)))
+                task.data_in.append(
+                    StreamBatch(data=next_df, length=len(next_df), _lineage=lineage)
+                )
             self.n_sourced += 1
             if self.n_sourced == self.max_batches:
                 self.logger.debug("Max batches reached, cancelling source generation")
                 self.source_exhausted = True
                 break
             total_length += len(next_df)
+
+    def _submit_merged_to_task(self, task, batches):
+        # Use lineage prefix up to and including the MRCA entry as the base
+        lineage = LineageEntry(
+            task=task.name,
+            kind=LKind.MERGE,
+            num_segments=1,
+            children=tuple(b._lineage for b in batches),
+            uid=self._next_uid(),
+        )
+        merged = [b.data for b in batches]
+        total_length = sum(b.length for b in batches)
+        self.logger.debug(
+            f"Enqueueing merged batch for <{task.name}>;n={len(merged)};l={total_length}]"
+        )
+        handle = self.task_submit(task.task, merged)
+        task.pending.appendleft(StreamBatch(length=total_length, data=handle, _lineage=lineage))
+        task.counter += 1
+
+    def _find_complete_origin(self, task):
+        # For a join task, find a set of origin uids from tasks within the queue
+        # for which we have seen batches from all required paths. Due to
+        # merging, the uids required to pass through to the join may be more
+        # than one.
+        required_paths = self._join_task_segments[task]
+        mrca_name = required_paths[0][0]
+        required_segments = defaultdict(dict)  # how many batches we need to see per path per origin uid
+        found_segments = defaultdict(lambda: defaultdict(int))  # how many batches we did see per path per origin uid
+        all_origins = []
+        for batch in reversed(task.data_in):
+            l_stack = [batch._lineage]  # stack for walking the lineage tree
+            origin_ids = set()  # all origin ids found for this batch
+            path = []  # stack for storing current visiting path
+            multiplier = []  # stack for storing the current multiplication factor from splits
+            while l_stack:
+                le = l_stack.pop()
+                if le.kind == LKind.TASK or le.kind == LKind.SOURCE:
+                    path.append(le.task if le.kind == LKind.TASK else None)
+                    multiplier.append(1)
+                    if le.task == mrca_name or le.kind == LKind.SOURCE:
+                        origin_ids.add(le.uid)
+                        found_path = tuple(reversed(path))
+                        required_segments[le.uid][found_path] = np.prod(multiplier)
+                        found_segments[le.uid][found_path] += 1
+                        path.pop()
+                        multiplier.pop()
+                        continue
+                elif le.kind == LKind.SPLIT:
+                    multiplier[-1] *= le.num_segments
+                l_stack.extend(le.children)
+            # add to all origins, combining with existing entry if there is
+            # overlap in any of the uids, since then they need to be sent
+            # together
+            all_origins.append(origin_ids)
+        merged = _merge_origin_sets(all_origins)
+        for oid_set in merged:
+            completeness = [
+                # we always need at least one segment per path, even if we
+                # haven't processed through the splits, e.g. the 0 and 1 defaults
+                found_segments[oid].get(rp, 0) == required_segments[oid].get(rp, 1)
+                for oid in oid_set for rp in required_paths
+            ]
+            if all(completeness):
+                return oid_set
+        return None
+
+    def _handle_join_task(self, task, rank):
+        eligible = submitted = False
+        mrca_name = self._join_task_segments[task][0][0]
+        complete_origin = self._find_complete_origin(task)
+
+        if complete_origin is None:
+            return (eligible, submitted)
+
+        eligible = True
+        if not self.task_submittable(task.task, rank):
+            return (eligible, submitted)
+
+        # Extract all batches for all origin uids in this complete set
+        batches = list(deque_extract(task.data_in, lambda b: _batch_origins(b, mrca_name).issubset(complete_origin)))
+        self._submit_merged_to_task(task, batches)
+        submitted = True
+        return (eligible, submitted)
 
     def enqueue_tasks(self):
         # helper to make submission decision of a single task based on the batch
@@ -186,11 +350,18 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             if len(task.data_in) == 0:
                 return (eligible, submitted)
 
+            # join_by_origin tasks use a different submission path
+            if task in self._join_task_segments:
+                return self._handle_join_task(task, rank)
+
             batch_size = task.task.batch_size
             if batch_size is not None:
                 for batch in deque_extract(task.data_in, lambda b: b.length > batch_size):
                     self.logger.debug(f"Enqueueing split for <{task.name}>[bs={batch_size}]")
-                    task.split_pending.appendleft(self.split_batch_submit(batch, batch_size))
+                    split_ref = self.split_batch_submit(batch, batch_size)
+                    task.split_pending.appendleft(
+                        StreamBatch(length=batch.length, data=split_ref, _lineage=batch._lineage)
+                    )
 
             num_to_merge = deque_num_merge(task.data_in, batch_size)
             if num_to_merge == 0:
@@ -204,10 +375,8 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             if not self.task_submittable(task.task, rank):
                 return (eligible, submitted)
 
-            merged = [task.data_in.pop().data for _ in range(num_to_merge)]
-            self.logger.debug(f"Enqueueing merged batches <{task.name}>[n={len(merged)};bs={batch_size}]")
-            task.pending.appendleft(self.task_submit(task.task, merged))
-            task.counter += 1
+            batches = [task.data_in.pop() for _ in range(num_to_merge)]
+            self._submit_merged_to_task(task, batches)
             submitted = True
             return (eligible, submitted)
 
@@ -384,3 +553,33 @@ def deque_num_merge(queue, batch_size):
         if len(idxs) == 0:
             return 0
         return idxs[0] + 1
+
+
+def _batch_origins(batch, mrca_name):
+    entry = [batch._lineage]
+    origins = set()
+    while entry:
+        l = entry.pop()
+        if l.kind == LKind.TASK and l.task == mrca_name:
+            origins.add(l.uid)
+        elif l.kind == LKind.SOURCE and mrca_name is None:
+            origins.add(l.uid)
+        entry.extend(l.children)
+    return origins
+
+
+def _merge_origin_sets(sets):
+    # Given a list of sets of origin ids, merge any that have overlap, since they
+    # need to be merged together for join_by_origin submission, doing so
+    # preserving the order in which they appear.
+    merged = []
+    for s in sets:
+        new_merged = []
+        for m in merged:
+            if not s.isdisjoint(m):
+                s = s.union(m)
+            else:
+                new_merged.append(m)
+        new_merged.append(s)
+        merged = new_merged
+    return merged

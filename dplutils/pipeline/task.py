@@ -40,6 +40,11 @@ class PipelineTask:
         num_gpus: GPU allocations requested for task
         resources: dict of any additional resources to pass to the executor
         batch_size: ideal batch size for this workload.
+        join_by_origin: when True and this task has multiple input edges,
+            batches from different upstream tasks will be grouped by their
+            common origin before being submitted. This enables the task function
+            to join rows produced by different branches of the graph that
+            originated from the same source batch.
     """
 
     name: str
@@ -50,6 +55,7 @@ class PipelineTask:
     num_cpus: int = 1
     resources: dict[str, Any] = field(default_factory=dict)
     batch_size: int = None
+    join_by_origin: bool = False
 
     def __call__(self, name: str = None, **kwargs):
         if name is None:
