@@ -3,6 +3,7 @@ from collections import defaultdict, deque
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from enum import Enum
+import time
 from typing import Any, Callable
 
 import networkx as nx
@@ -23,21 +24,12 @@ class LKind(Enum):
 
 @dataclass(frozen=True)
 class LineageEntry:
-    """Record of a division or processing event in batch lineage.
-
-    Args:
-      task: structured identifier for this point in the pipeline.
-      num_segments: how many sibling batches exist at this point. 1 for normal
-        processing, N for an N-way split or N-way fan-out.
-      uid: globally unique monotonic counter assigned by the executor. Used as
-        the grouping key for :attr:`join_by_origin` nodes.
-    """
-
     task: str
     num_segments: int
     uid: int
     kind: LKind
     children: tuple["LineageEntry", ...] = field(default_factory=tuple)
+    time_in: float = field(default_factory=lambda: time.time())
 
 
 @dataclass

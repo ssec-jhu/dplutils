@@ -50,9 +50,9 @@ class TestLineageEntry:
             le.task = "other"
 
     def test_hashable(self):
-        le = LineageEntry(task="source", num_segments=1, uid=0, kind=LKind.SOURCE)
+        le = LineageEntry(task="source", num_segments=1, uid=0, kind=LKind.SOURCE, time_in=1)
         assert hash(le)
-        assert le == LineageEntry(task="source", num_segments=1, uid=0, kind=LKind.SOURCE)
+        assert le == LineageEntry(task="source", num_segments=1, uid=0, kind=LKind.SOURCE, time_in=1)
 
     def test_in_tuple(self):
         t = (
