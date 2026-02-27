@@ -1,11 +1,12 @@
 """Tests for join_by_origin feature in StreamingGraphExecutor."""
+
 import pandas as pd
 import pytest
 
 from dplutils.pipeline import PipelineGraph, PipelineTask
 from dplutils.pipeline.stream import (
-    LKind,
     LineageEntry,
+    LKind,
     LocalSerialExecutor,
     StreamBatch,
     _batch_origins,
@@ -157,10 +158,16 @@ class TestFindCompleteOrigin:
         join_task = self._get_join_task(pl)
         # Lineage: TASK -> SOURCE (no intermediate MRCA task)
         source_entry = LineageEntry(task="", num_segments=1, uid=10, kind=LKind.SOURCE)
-        batch_a = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=100, kind=LKind.TASK, children=(source_entry,)))
-        batch_b = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="B", num_segments=1, uid=101, kind=LKind.TASK, children=(source_entry,)))
+        batch_a = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="A", num_segments=1, uid=100, kind=LKind.TASK, children=(source_entry,)),
+        )
+        batch_b = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="B", num_segments=1, uid=101, kind=LKind.TASK, children=(source_entry,)),
+        )
         join_task.data_in.append(batch_a)
         join_task.data_in.append(batch_b)
         result = pl._find_complete_origin(join_task)
@@ -191,10 +198,16 @@ class TestFindCompleteOrigin:
         join_task = self._get_join_task(pl)
         source = LineageEntry(task="", num_segments=1, uid=0, kind=LKind.SOURCE)
         mrca = LineageEntry(task="source", num_segments=3, uid=10, kind=LKind.TASK, children=(source,))
-        a = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=100, kind=LKind.TASK, children=(mrca,)))
-        b = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="B", num_segments=1, uid=101, kind=LKind.TASK, children=(mrca,)))
+        a = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="A", num_segments=1, uid=100, kind=LKind.TASK, children=(mrca,)),
+        )
+        b = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="B", num_segments=1, uid=101, kind=LKind.TASK, children=(mrca,)),
+        )
         join_task.data_in.append(a)
         join_task.data_in.append(b)
         result = pl._find_complete_origin(join_task)
@@ -208,10 +221,16 @@ class TestFindCompleteOrigin:
         source = LineageEntry(task="", num_segments=1, uid=0, kind=LKind.SOURCE)
         mrca = LineageEntry(task="source", num_segments=2, uid=10, kind=LKind.TASK, children=(source,))
         split = LineageEntry(task="A", num_segments=2, uid=50, kind=LKind.SPLIT, children=(mrca,))
-        frag1 = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=51, kind=LKind.TASK, children=(split,)))
-        frag2 = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=52, kind=LKind.TASK, children=(split,)))
+        frag1 = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="A", num_segments=1, uid=51, kind=LKind.TASK, children=(split,)),
+        )
+        frag2 = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="A", num_segments=1, uid=52, kind=LKind.TASK, children=(split,)),
+        )
         b_batch = self._make_diamond_batch("B", origin_uid=10, task_uid=60)
 
         join_task.data_in.append(frag1)
@@ -243,8 +262,11 @@ class TestFindCompleteOrigin:
         # we should need 4 fragments of C
         c_fragments = []
         for uid, split in [(55, split2_1), (56, split2_1), (57, split2_2), (58, split2_2)]:
-            cfrag = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-                task="C", num_segments=1, uid=uid, kind=LKind.TASK, children=(split,)))
+            cfrag = StreamBatch(
+                length=1,
+                data=None,
+                _lineage=LineageEntry(task="C", num_segments=1, uid=uid, kind=LKind.TASK, children=(split,)),
+            )
             c_fragments.append(cfrag)
 
         b_batch = self._make_diamond_batch("B", origin_uid=10, task_uid=60)
@@ -265,8 +287,11 @@ class TestFindCompleteOrigin:
         source = LineageEntry(task="", num_segments=1, uid=0, kind=LKind.SOURCE)
         mrca = LineageEntry(task="source", num_segments=2, uid=10, kind=LKind.TASK, children=(source,))
         split = LineageEntry(task="A", num_segments=2, uid=50, kind=LKind.SPLIT, children=(mrca,))
-        frag1 = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=51, kind=LKind.TASK, children=(split,)))
+        frag1 = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="A", num_segments=1, uid=51, kind=LKind.TASK, children=(split,)),
+        )
         b_batch = self._make_diamond_batch("B", origin_uid=10, task_uid=60)
 
         join_task.data_in.append(frag1)
@@ -284,8 +309,11 @@ class TestFindCompleteOrigin:
         mrca1 = LineageEntry(task="source", num_segments=2, uid=10, kind=LKind.TASK, children=(src1,))
         mrca2 = LineageEntry(task="source", num_segments=2, uid=20, kind=LKind.TASK, children=(src2,))
         merge = LineageEntry(task="A", num_segments=1, uid=30, kind=LKind.MERGE, children=(mrca1, mrca2))
-        a_merged = StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=31, kind=LKind.TASK, children=(merge,)))
+        a_merged = StreamBatch(
+            length=1,
+            data=None,
+            _lineage=LineageEntry(task="A", num_segments=1, uid=31, kind=LKind.TASK, children=(merge,)),
+        )
 
         # B for origin 10 only -> not yet complete (missing B for origin 20)
         b_10 = self._make_diamond_batch("B", origin_uid=10, task_uid=40)
@@ -314,10 +342,20 @@ class TestHandleJoinTask:
         # Build two batches with matching origin so the origin is complete
         source = LineageEntry(task="", num_segments=1, uid=0, kind=LKind.SOURCE)
         mrca = LineageEntry(task="source", num_segments=2, uid=10, kind=LKind.TASK, children=(source,))
-        join_task.data_in.append(StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="A", num_segments=1, uid=100, kind=LKind.TASK, children=(mrca,))))
-        join_task.data_in.append(StreamBatch(length=1, data=None, _lineage=LineageEntry(
-            task="B", num_segments=1, uid=101, kind=LKind.TASK, children=(mrca,))))
+        join_task.data_in.append(
+            StreamBatch(
+                length=1,
+                data=None,
+                _lineage=LineageEntry(task="A", num_segments=1, uid=100, kind=LKind.TASK, children=(mrca,)),
+            )
+        )
+        join_task.data_in.append(
+            StreamBatch(
+                length=1,
+                data=None,
+                _lineage=LineageEntry(task="B", num_segments=1, uid=101, kind=LKind.TASK, children=(mrca,)),
+            )
+        )
 
         # Make the executor refuse submissions (sflag=1 -> task_submittable returns False)
         pl.sflag = 1
@@ -356,10 +394,12 @@ class TestMRCAComputation:
         join_task = [t for t in pl.stream_graph if t.name == "join"][0]
         paths = pl._join_task_segments[join_task]
         # Paths are lists of task names from source up to (but not including) join
-        assert sorted([tuple(p) for p in paths]) == sorted([
-            ("source", "A"),
-            ("source", "B"),
-        ])
+        assert sorted([tuple(p) for p in paths]) == sorted(
+            [
+                ("source", "A"),
+                ("source", "B"),
+            ]
+        )
 
     def test_deeper_diamond_task_segments(self):
         """Deeper graph: source->A->B->C->join, B->D->join => paths through B."""
@@ -373,10 +413,12 @@ class TestMRCAComputation:
         pl = LocalSerialExecutor(graph, max_batches=1)
         join_task = [t for t in pl.stream_graph if t.name == "join"][0]
         paths = pl._join_task_segments[join_task]
-        assert sorted([tuple(p) for p in paths]) == sorted([
-            ("B", "C"),
-            ("B", "D"),
-        ])
+        assert sorted([tuple(p) for p in paths]) == sorted(
+            [
+                ("B", "C"),
+                ("B", "D"),
+            ]
+        )
 
     def test_join_with_one_segments_ignores_joins(self):
         """If join is directly after source, the single segment should be the source, not the join."""
@@ -515,11 +557,13 @@ class TestNoJoinByOriginUnchanged:
         # Run and inspect: override resolve_completed to capture lineage
         observed = []
         orig = type(pl).resolve_completed
+
         def intercept(self_):
             for task in self_.stream_graph.walk_fwd():
                 for b in task.pending:
                     observed.append(b._lineage)
             return orig(self_)
+
         type(pl).resolve_completed = intercept
         try:
             list(pl.run())
@@ -629,7 +673,7 @@ class TestMergeOriginSets:
         inputs = [{1, 2}, {3, 4}, {2, 5}, {6}, {4, 7}]
         result = _merge_origin_sets(inputs)
         for i, a in enumerate(result):
-            for b in result[i + 1:]:
+            for b in result[i + 1 :]:
                 assert a.isdisjoint(b), f"Sets {a} and {b} are not disjoint"
 
     def test_cascading_merge(self):
@@ -684,7 +728,7 @@ class TestMergeOriginSets:
         assert set().union(*result) == set().union(*inputs)
         # Verify disjointness
         for i, a in enumerate(result):
-            for b in result[i + 1:]:
+            for b in result[i + 1 :]:
                 assert a.isdisjoint(b)
 
     def test_duplicate_sets(self):

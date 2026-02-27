@@ -3,8 +3,7 @@ from collections import defaultdict, deque
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from enum import Enum
-from sysconfig import get_paths
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable
 
 import networkx as nx
 import numpy as np
@@ -13,6 +12,7 @@ import pandas as pd
 from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
 from dplutils.pipeline.graph import TRM
 from dplutils.pipeline.utils import deque_extract, split_dataframe
+
 
 class LKind(Enum):
     TASK = "normal"
@@ -32,7 +32,6 @@ class LineageEntry:
       uid: globally unique monotonic counter assigned by the executor. Used as
         the grouping key for :attr:`join_by_origin` nodes.
     """
-
 
     task: str
     num_segments: int
@@ -56,7 +55,7 @@ class StreamBatch:
 
     length: int
     data: Any
-    _lineage: LineageEntry|None = None
+    _lineage: LineageEntry | None = None
 
 
 @dataclass
@@ -209,7 +208,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                         num_segments=num_neighbors,
                         uid=self._next_uid(),
                         kind=LKind.TASK,
-                        children=(ready._lineage,)
+                        children=(ready._lineage,),
                     )
                     for next_task in self.stream_graph.neighbors(task):
                         self.logger.debug(f"Moving <{task.name}>[l={block_info.length}] to <{next_task.name}>")
@@ -223,7 +222,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                     num_segments=len(resolved),
                     uid=self._next_uid(),
                     kind=LKind.SPLIT,
-                    children=(ready._lineage,)
+                    children=(ready._lineage,),
                 )
                 for split in resolved:
                     batch = StreamBatch(length=split.length, data=split.data, _lineage=lineage)
@@ -246,9 +245,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             # necessary batching and splitting can be handled by normal procedure.
             lineage = LineageEntry(num_segments=1, uid=self._next_uid(), task="", kind=LKind.SOURCE)
             for task in self.stream_graph.source_tasks:
-                task.data_in.append(
-                    StreamBatch(data=next_df, length=len(next_df), _lineage=lineage)
-                )
+                task.data_in.append(StreamBatch(data=next_df, length=len(next_df), _lineage=lineage))
             self.n_sourced += 1
             if self.n_sourced == self.max_batches:
                 self.logger.debug("Max batches reached, cancelling source generation")
@@ -267,9 +264,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         )
         merged = [b.data for b in batches]
         total_length = sum(b.length for b in batches)
-        self.logger.debug(
-            f"Enqueueing merged batch for <{task.name}>;n={len(merged)};l={total_length}]"
-        )
+        self.logger.debug(f"Enqueueing merged batch for <{task.name}>;n={len(merged)};l={total_length}]")
         handle = self.task_submit(task.task, merged)
         task.pending.appendleft(StreamBatch(length=total_length, data=handle, _lineage=lineage))
         task.counter += 1
@@ -315,7 +310,8 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 # we always need at least one segment per path, even if we
                 # haven't processed through the splits, e.g. the 0 and 1 defaults
                 found_segments[oid].get(rp, 0) == required_segments[oid].get(rp, 1)
-                for oid in oid_set for rp in required_paths
+                for oid in oid_set
+                for rp in required_paths
             ]
             if all(completeness):
                 return oid_set
@@ -559,12 +555,12 @@ def _batch_origins(batch, mrca_name):
     entry = [batch._lineage]
     origins = set()
     while entry:
-        l = entry.pop()
-        if l.kind == LKind.TASK and l.task == mrca_name:
-            origins.add(l.uid)
-        elif l.kind == LKind.SOURCE and mrca_name is None:
-            origins.add(l.uid)
-        entry.extend(l.children)
+        le = entry.pop()
+        if le.kind == LKind.TASK and le.task == mrca_name:
+            origins.add(le.uid)
+        elif le.kind == LKind.SOURCE and mrca_name is None:
+            origins.add(le.uid)
+        entry.extend(le.children)
     return origins
 
 

@@ -81,7 +81,6 @@ class TestGraph:
         assert walked[-1] in graph_info.sources
         assert len(walked) == len(p)
 
-
     def test_graph_walk_back_respects_dependencies(self, graph_info):
         """Every node must appear after all of its successors in a backward walk."""
         p = PipelineGraph(graph_info.edges)
@@ -89,7 +88,6 @@ class TestGraph:
         index = {node: i for i, node in enumerate(walked)}
         for u, v in graph_info.edges:
             assert index[v] < index[u], f"{v.name} should appear before {u.name}"
-
 
     def test_graph_walk_excludes_starting_node(self, graph_info):
         p = PipelineGraph(graph_info.edges)
