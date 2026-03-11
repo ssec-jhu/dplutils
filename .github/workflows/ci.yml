@@ -82,6 +82,9 @@ jobs:
     - name: Test with tox
       run: |
         tox -e test
+      env:
+        RAY_OBJECT_STORE_MEMORY: "200000000"
+        RAY_RAYLET_START_WAIT_TIME_S: "120"
     - name: Archive coverage report
       uses: actions/upload-artifact@v4
       with:
