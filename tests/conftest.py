@@ -16,7 +16,12 @@ def pipelinestartdf():
 
 @pytest.fixture(scope="session")
 def raysession():
-    ray.init("local", num_cpus=2, log_to_driver=False, object_store_memory=200 * 1024 * 1024)
+    ray.init(
+        num_cpus=2,
+        log_to_driver=False,
+        include_dashboard=False,
+        object_store_memory=78643200,  # 75 MiB - minimal for tests
+    )
 
 
 @pytest.fixture(scope="session")
