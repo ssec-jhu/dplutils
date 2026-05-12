@@ -1,4 +1,4 @@
-ray==2.53.0
+ray==2.54.0
 async-timeout==4.0.3
 pandas==2.3.3
 pyarrow==22.0.0
