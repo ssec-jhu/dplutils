@@ -55,30 +55,36 @@ output dataframes:
 import numpy as np
 from dplutils.pipeline import PipelineGraph, PipelineTask
 
+
 # Definitions of task code - note all take dataframe as first argument and return a dataframe
 def generate_sample(df):
-  return df.assign(sample = np.random.random(len(df)))
+    return df.assign(sample=np.random.random(len(df)))
+
 
 def round_sample(df, decimals=1):
-  return df.assign(rounded = df['sample'].round(decimals))
+    return df.assign(rounded=df["sample"].round(decimals))
+
 
 def calc_residual(df):
-  return df.assign(residual = df['rounded'] - df['sample'])
+    return df.assign(residual=df["rounded"] - df["sample"])
+
 
 # Connect them together in an execution graph (along with execution metadata)
-pipeline = PipelineGraph([
-  PipelineTask('generate', generate_sample),
-  PipelineTask('round', round_sample, batch_size=10),
-  PipelineTask('resid', calc_residual, num_cpus=2),
-])
+pipeline = PipelineGraph(
+    [
+        PipelineTask("generate", generate_sample),
+        PipelineTask("round", round_sample, batch_size=10),
+        PipelineTask("resid", calc_residual, num_cpus=2),
+    ]
+)
 
 # Run the tasks and iterate over the outputs, here using the Ray execution framework
 from dplutils.pipeline.ray import RayStreamGraphExecutor
 
-executor = RayStreamGraphExecutor(pipeline).set_config('round.kwargs.decimals', 2)
+executor = RayStreamGraphExecutor(pipeline).set_config("round.kwargs.decimals", 2)
 for result_batch in executor.run():
-  print(result_batch)
-  break  # otherwise it will - by design - run indefinitely!
+    print(result_batch)
+    break  # otherwise it will - by design - run indefinitely!
 ```
 
 As an alternative to iterating over batches directly as above, we can use the
@@ -88,8 +94,8 @@ options so we just need to define the desired executor:
 ```py
 executor = RayStreamGraphExecutor(pipeline)
 
-if __name__ == '__main__':
-  cli_run(executor)
+if __name__ == "__main__":
+    cli_run(executor)
 ```
 
 then run our module with parameters as needed. The CLI based run will write the
@@ -140,7 +146,7 @@ For instance, if a task required a database as described above, the task might
 be defined in the following manner:
 
 ```py
-PipelineTask('bigdboperation', function_needs_big_db, resources={'bigdb': 1})
+PipelineTask("bigdboperation", function_needs_big_db, resources={"bigdb": 1})
 ```
 
 And if using the Ray executor, then at least one worker in the cluster that has
