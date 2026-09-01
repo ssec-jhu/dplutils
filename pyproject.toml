@@ -12,7 +12,7 @@ requires-python = ">=3.10,<3.12"  # prob can relax the lower limit...
 dependencies = [
     "pandas",
     "numpy",
-    "ray[data]>=2.56.1",
+    "ray[data]>=2.58.0",
     "pyarrow",
     "networkx",
     "cloudpickle",
