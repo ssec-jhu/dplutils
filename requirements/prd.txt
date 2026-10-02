@@ -1,7 +1,7 @@
-ray==2.56.1
+ray==2.58.0
 async-timeout==4.0.3
 pandas==2.3.3
-pyarrow==25.0.0
+pyarrow==25.0.1
 numpy==1.26.4
 networkx==3.4.2
 cloudpickle==3.1.2
