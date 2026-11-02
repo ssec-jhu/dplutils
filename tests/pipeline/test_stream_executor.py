@@ -81,6 +81,71 @@ def test_stream_executor_input_batch_size_splits(dummy_steps):
     assert len(res) == 8
 
 
+def test_stream_source_round_robin_is_strict():
+    # a source that cannot be submitted must block the sources behind it,
+    # otherwise one with a smaller request would take all the capacity
+    class MyExec(LocalSerialExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.counts = defaultdict(int)
+            self.blocked = "big"
+
+        def task_submit(self, task, data):
+            self.counts[task.name] += 1
+            return super().task_submit(task, data)
+
+        def task_submittable(self, t, rank):
+            return t.name != self.blocked
+
+    big = PipelineTask("big", lambda x: x)
+    small = PipelineTask("small", lambda x: x)
+    sink = PipelineTask("sink", lambda x: x)
+    p = MyExec([(big, sink), (small, sink)], max_batches=4)
+    p.n_sourced = 0
+    p.source_exhausted = False
+    p.source_generator = p.generator_fun()
+    p.enqueue_tasks()
+    # the blocked source sorts first (neither has been submitted), so the other
+    # must not run ahead of it
+    assert p.counts["big"] == p.counts["small"] == 0
+    p.blocked = None
+    p.enqueue_tasks()
+    assert p.counts["big"] > 0 and p.counts["small"] > 0
+
+
+@pytest.mark.parametrize("rows_per_input", [1, 10])
+def test_stream_source_cadence_follows_batch_size(rows_per_input):
+    # sources with differing batch size should submit in inverse proportion to
+    # it, and interleave as they go rather than one lagging the other
+    class MyExec(LocalSerialExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.submissions = []
+
+        def task_submit(self, task, data):
+            if task in self.graph.source_tasks:
+                self.submissions.append(task.name)
+            return super().task_submit(task, data)
+
+    def generator():
+        for i in range(20):
+            yield pd.DataFrame({"run_id": ["r"] * rows_per_input, "id": range(rows_per_input)})
+
+    one = PipelineTask("one", lambda x: x, batch_size=1)
+    ten = PipelineTask("ten", lambda x: x, batch_size=10)
+    sink = PipelineTask("sink", lambda x: x)
+    p = MyExec([(one, sink), (ten, sink)], max_batches=20, generator=generator)
+    list(p.run())
+
+    n_rows = 20 * rows_per_input
+    assert p.submissions.count("one") == n_rows  # one row at a time
+    assert p.submissions.count("ten") == n_rows / 10  # ten at a time
+    # the larger batch must not lag: at most its own batch worth of the smaller
+    # one goes by between its submissions
+    runs = "".join("ot"[i == "ten"] for i in p.submissions).split("t")
+    assert max(len(i) for i in runs) <= 10
+
+
 def test_stream_submission_ordering_evaluation_priority():
     # tracking class adds counts and a parallel submission which allows us to
     # locally test that the re-prioritization during submission is working. If

@@ -190,7 +190,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
             if batch_size is not None:
                 for batch in deque_extract(task.data_in, lambda b: b.length > batch_size):
                     self.logger.debug(f"Enqueueing split for <{task.name}>[bs={batch_size}]")
-                    task.split_pending.appendleft(self.split_batch_submit(batch, batch_size))
+                    task.split_pending.appendleft(self.split_batch_submit(task.task, batch, batch_size))
 
             num_to_merge = deque_num_merge(task.data_in, batch_size)
             if num_to_merge == 0:
@@ -233,12 +233,28 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         # input queue and secondarily on number of invocations in case batch sizes differ.
         while True:
             task_scheduled = False
-            for task in sorted(self.stream_graph.source_tasks, key=lambda x: (-len(x.data_in), x.counter)):
-                if self.task_submittable(task.task, rank):
-                    self._feed_source(task)
-                    _, task_scheduled = _handle_one_task(task, rank)
-                    if task_scheduled:  # we want to re-evalute the sort order
-                        break
+            for task in sorted(
+                self.stream_graph.source_tasks, key=lambda x: (-(len(x.data_in) + len(x.split_pending)), x.counter)
+            ):
+                # The round-robin is strict: a source that doesn't presently fit
+                # blocks those behind it, rather than letting a source with a
+                # smaller request perpetually take the capacity it is waiting
+                # on. All sources are meant to process inputs, so stalling is
+                # also the correct response to one that can never be submitted.
+                if not self.task_submittable(task.task, rank):
+                    break
+                # Likewise for a source whose input queue is about to be
+                # refilled by its own in-flight split - that is expected to be
+                # quick, and feeding the next source in the meantime would let
+                # it get a batch ahead in the rotation.
+                if len(task.data_in) == 0 and len(task.split_pending) > 0:
+                    break
+                self._feed_source(task)
+                _, task_scheduled = _handle_one_task(task, rank)
+                # we want to re-evalute the sort order after a submission, and
+                # to hold the rotation if this task just split its own input
+                if task_scheduled or len(task.split_pending) > 0:
+                    break
             if not task_scheduled:
                 break
 
@@ -316,7 +332,7 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         pass
 
     @abstractmethod
-    def split_batch_submit(self, batch: StreamBatch, max_rows: int) -> Any:
+    def split_batch_submit(self, task: PipelineTask, batch: StreamBatch, max_rows: int) -> Any:
         """Submit a task to split batch into at most ``max_rows``
 
         Similart to task_submit, implementations should arrange by whatever
@@ -325,6 +341,11 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
         into a number of parts that result in no more than ``max_rows`` per
         part. The return value should be a list of objects that can be processed
         by :meth:`is_task_ready` and :meth:`task_resolve_output`.
+
+        ``task`` is the task whose input queue the splits are destined for. The
+        split itself does not run it, but implementations may use its resource
+        requirements so that the resources are held across the split rather than
+        claimed by an upstream task in the interim.
         """
         pass
 
@@ -354,7 +375,7 @@ class LocalSerialExecutor(StreamingGraphExecutor):
         self.sflag = 1
         return pt.func(pd.concat(df_list))
 
-    def split_batch_submit(self, stream_batch, max_rows):
+    def split_batch_submit(self, task, stream_batch, max_rows):
         df = stream_batch.data
         return split_dataframe(df, max_rows=max_rows)
 
