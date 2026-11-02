@@ -113,6 +113,23 @@ def test_stream_source_round_robin_is_strict():
     assert p.counts["big"] > 0 and p.counts["small"] > 0
 
 
+def test_stream_source_with_pending_split_holds_rotation():
+    # a source still waiting on a split from a previous pass must neither be
+    # fed again nor let the sources behind it get ahead
+    one = PipelineTask("one", lambda x: x, batch_size=1)
+    two = PipelineTask("two", lambda x: x)
+    sink = PipelineTask("sink", lambda x: x)
+    p = LocalSerialExecutor([(one, sink), (two, sink)], max_batches=10)
+    p.n_sourced = 0
+    p.source_exhausted = False
+    p.source_generator = p.generator_fun()
+    p.stream_graph.task_map["one"].split_pending.append("in flight")
+
+    p.enqueue_tasks()
+    assert p.n_sourced == 0  # nothing fed from the generator
+    assert all(i.counter == 0 for i in p.stream_graph)  # and nothing submitted
+
+
 @pytest.mark.parametrize("rows_per_input", [1, 10])
 def test_stream_source_cadence_follows_batch_size(rows_per_input):
     # sources with differing batch size should submit in inverse proportion to
