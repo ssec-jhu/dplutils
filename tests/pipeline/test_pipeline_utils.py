@@ -1,13 +1,29 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import pandas as pd
 import pytest
 
-from dplutils.pipeline.utils import dict_from_coord, split_dataframe
+from dplutils.pipeline.utils import deque_extract_one, dict_from_coord, split_dataframe
 
 
 def test_dict_from_coord():
     assert dict_from_coord("a.b.c", "value") == {"a": {"b": {"c": "value"}}}
+
+
+@pytest.mark.parametrize(
+    "match, expected, remaining",
+    [
+        (0, 0, [1, 2, 3]),  # head of queue, no rotation needed
+        (2, 2, [0, 1, 3]),  # mid queue, rotations must be undone
+        (3, 3, [0, 1, 2]),  # tail, every item rotated past
+        (9, None, [0, 1, 2, 3]),  # no match, queue untouched
+    ],
+)
+def test_deque_extract_one(match, expected, remaining):
+    # the queue is fifo from the right, so index 0 is the head
+    queue = deque([3, 2, 1, 0])
+    assert deque_extract_one(queue, lambda i: i == match) == expected
+    assert list(reversed(queue)) == remaining
 
 
 @pytest.mark.parametrize(
