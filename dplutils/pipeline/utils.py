@@ -26,6 +26,19 @@ def deque_extract(queue, condition):
             queue.rotate()
 
 
+def deque_extract_one(queue, condition):
+    # pull the first (in queue priority order) item matching condition off the
+    # queue, restoring the ordering of the remainder. Returns None if nothing
+    # matches. Not thread-safe
+    for rotations in range(len(queue)):
+        if condition(queue[-1]):
+            item = queue.pop()
+            queue.rotate(-rotations)
+            return item
+        queue.rotate()
+    return None
+
+
 def calculate_splits(length, max_rows):
     return int(np.ceil(length / max_rows))
 

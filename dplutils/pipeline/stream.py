@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from dplutils.pipeline import OutputBatch, PipelineExecutor, PipelineTask
-from dplutils.pipeline.utils import deque_extract, split_dataframe
+from dplutils.pipeline.utils import deque_extract, deque_extract_one, split_dataframe
 
 
 @dataclass
@@ -187,10 +187,18 @@ class StreamingGraphExecutor(PipelineExecutor, ABC):
                 return (eligible, submitted)
 
             batch_size = task.task.batch_size
-            if batch_size is not None:
-                for batch in deque_extract(task.data_in, lambda b: b.length > batch_size):
-                    self.logger.debug(f"Enqueueing split for <{task.name}>[bs={batch_size}]")
-                    task.split_pending.appendleft(self.split_batch_submit(task.task, batch, batch_size))
+            if batch_size is not None and any(b.length > batch_size for b in task.data_in):
+                # An oversized batch has to be split before it can be submitted
+                # to the target task. As splits are expected to be quick and
+                # only useful when we can immediately schedule the task for at
+                # least one split batch, ensure the target task is submittable.
+                eligible = True
+                if not self.task_submittable(task.task, rank):
+                    return (eligible, submitted)
+                batch = deque_extract_one(task.data_in, lambda b: b.length > batch_size)
+                self.logger.debug(f"Enqueueing split for <{task.name}>[bs={batch_size}]")
+                task.split_pending.appendleft(self.split_batch_submit(task.task, batch, batch_size))
+                return (eligible, True)
 
             num_to_merge = deque_num_merge(task.data_in, batch_size)
             if num_to_merge == 0:

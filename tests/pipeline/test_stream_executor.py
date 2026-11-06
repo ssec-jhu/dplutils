@@ -5,7 +5,7 @@ import pytest
 from test_suite import PipelineExecutorTestSuite
 
 from dplutils.pipeline import PipelineTask
-from dplutils.pipeline.stream import LocalSerialExecutor, StreamTask
+from dplutils.pipeline.stream import LocalSerialExecutor, StreamBatch, StreamTask
 
 
 class TestStreamingExecutorDefault(PipelineExecutorTestSuite):
@@ -79,6 +79,44 @@ def test_stream_executor_input_batch_size_splits(dummy_steps):
     pl = LocalSerialExecutor(dummy_steps, generator=generator).set_config("task1.batch_size", 1)
     res = [i.data for i in pl.run()]
     assert len(res) == 8
+
+
+def test_stream_splits_limited_by_submittable():
+    # splits may be charged the resources of the task they feed, so a queue of
+    # oversized batches must not submit more of them than capacity allows, and
+    # the un-split remainder must keep its queue ordering
+    class MyExec(LocalSerialExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.claimed = 0
+            self.splits = 0
+
+        def task_submittable(self, task, rank):
+            return self.claimed < 2
+
+        def split_batch_submit(self, task, batch, max_rows):
+            self.claimed += 1
+            self.splits += 1
+            return super().split_batch_submit(task, batch, max_rows)
+
+        def task_submit(self, task, df_list):
+            self.claimed += 1
+            return super().task_submit(task, df_list)
+
+    source = PipelineTask("source", lambda x: x)
+    mid = PipelineTask("mid", lambda x: x, batch_size=2)
+    p = MyExec([(source, mid)])
+    p.n_sourced = 0
+    p.source_exhausted = True
+    mid_task = p.stream_graph.task_map["mid"]
+    for i in range(5):
+        df = pd.DataFrame({"id": range(4), "which": i})
+        mid_task.data_in.appendleft(StreamBatch(len(df), df))
+
+    p.enqueue_tasks()
+    assert p.splits == 2
+    # fifo order of what remains is preserved for subsequent passes
+    assert [i.data.which[0] for i in reversed(mid_task.data_in)] == [2, 3, 4]
 
 
 def test_stream_source_round_robin_is_strict():
