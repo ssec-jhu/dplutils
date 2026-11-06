@@ -5,7 +5,7 @@ import pytest
 from test_suite import PipelineExecutorTestSuite
 
 from dplutils.pipeline import PipelineTask
-from dplutils.pipeline.stream import LocalSerialExecutor, StreamTask
+from dplutils.pipeline.stream import LocalSerialExecutor, StreamBatch, StreamTask
 
 
 class TestStreamingExecutorDefault(PipelineExecutorTestSuite):
@@ -79,6 +79,126 @@ def test_stream_executor_input_batch_size_splits(dummy_steps):
     pl = LocalSerialExecutor(dummy_steps, generator=generator).set_config("task1.batch_size", 1)
     res = [i.data for i in pl.run()]
     assert len(res) == 8
+
+
+def test_stream_splits_limited_by_submittable():
+    # splits may be charged the resources of the task they feed, so a queue of
+    # oversized batches must not submit more of them than capacity allows, and
+    # the un-split remainder must keep its queue ordering
+    class MyExec(LocalSerialExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.claimed = 0
+            self.splits = 0
+
+        def task_submittable(self, task, rank):
+            return self.claimed < 2
+
+        def split_batch_submit(self, task, batch, max_rows):
+            self.claimed += 1
+            self.splits += 1
+            return super().split_batch_submit(task, batch, max_rows)
+
+        def task_submit(self, task, df_list):
+            self.claimed += 1
+            return super().task_submit(task, df_list)
+
+    source = PipelineTask("source", lambda x: x)
+    mid = PipelineTask("mid", lambda x: x, batch_size=2)
+    p = MyExec([(source, mid)])
+    p.n_sourced = 0
+    p.source_exhausted = True
+    mid_task = p.stream_graph.task_map["mid"]
+    for i in range(5):
+        df = pd.DataFrame({"id": range(4), "which": i})
+        mid_task.data_in.appendleft(StreamBatch(len(df), df))
+
+    p.enqueue_tasks()
+    assert p.splits == 2
+    # fifo order of what remains is preserved for subsequent passes
+    assert [i.data.which[0] for i in reversed(mid_task.data_in)] == [2, 3, 4]
+
+
+def test_stream_source_round_robin_is_strict():
+    # a source that cannot be submitted must block the sources behind it,
+    # otherwise one with a smaller request would take all the capacity
+    class MyExec(LocalSerialExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.counts = defaultdict(int)
+            self.blocked = "big"
+
+        def task_submit(self, task, data):
+            self.counts[task.name] += 1
+            return super().task_submit(task, data)
+
+        def task_submittable(self, t, rank):
+            return t.name != self.blocked
+
+    big = PipelineTask("big", lambda x: x)
+    small = PipelineTask("small", lambda x: x)
+    sink = PipelineTask("sink", lambda x: x)
+    p = MyExec([(big, sink), (small, sink)], max_batches=4)
+    p.n_sourced = 0
+    p.source_exhausted = False
+    p.source_generator = p.generator_fun()
+    p.enqueue_tasks()
+    # the blocked source sorts first (neither has been submitted), so the other
+    # must not run ahead of it
+    assert p.counts["big"] == p.counts["small"] == 0
+    p.blocked = None
+    p.enqueue_tasks()
+    assert p.counts["big"] > 0 and p.counts["small"] > 0
+
+
+def test_stream_source_with_pending_split_holds_rotation():
+    # a source still waiting on a split from a previous pass must neither be
+    # fed again nor let the sources behind it get ahead
+    one = PipelineTask("one", lambda x: x, batch_size=1)
+    two = PipelineTask("two", lambda x: x)
+    sink = PipelineTask("sink", lambda x: x)
+    p = LocalSerialExecutor([(one, sink), (two, sink)], max_batches=10)
+    p.n_sourced = 0
+    p.source_exhausted = False
+    p.source_generator = p.generator_fun()
+    p.stream_graph.task_map["one"].split_pending.append("in flight")
+
+    p.enqueue_tasks()
+    assert p.n_sourced == 0  # nothing fed from the generator
+    assert all(i.counter == 0 for i in p.stream_graph)  # and nothing submitted
+
+
+@pytest.mark.parametrize("rows_per_input", [1, 10])
+def test_stream_source_cadence_follows_batch_size(rows_per_input):
+    # sources with differing batch size should submit in inverse proportion to
+    # it, and interleave as they go rather than one lagging the other
+    class MyExec(LocalSerialExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.submissions = []
+
+        def task_submit(self, task, data):
+            if task in self.graph.source_tasks:
+                self.submissions.append(task.name)
+            return super().task_submit(task, data)
+
+    def generator():
+        for i in range(20):
+            yield pd.DataFrame({"run_id": ["r"] * rows_per_input, "id": range(rows_per_input)})
+
+    one = PipelineTask("one", lambda x: x, batch_size=1)
+    ten = PipelineTask("ten", lambda x: x, batch_size=10)
+    sink = PipelineTask("sink", lambda x: x)
+    p = MyExec([(one, sink), (ten, sink)], max_batches=20, generator=generator)
+    list(p.run())
+
+    n_rows = 20 * rows_per_input
+    assert p.submissions.count("one") == n_rows  # one row at a time
+    assert p.submissions.count("ten") == n_rows / 10  # ten at a time
+    # the larger batch must not lag: at most its own batch worth of the smaller
+    # one goes by between its submissions
+    runs = "".join("ot"[i == "ten"] for i in p.submissions).split("t")
+    assert max(len(i) for i in runs) <= 10
 
 
 def test_stream_submission_ordering_evaluation_priority():

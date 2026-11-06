@@ -8,7 +8,7 @@ description = ""
 readme = "README.md"
 license = {file = "LICENSE"}
 
-requires-python = ">=3.10,<3.12"  # prob can relax the lower limit...
+requires-python = ">=3.10"
 dependencies = [
     "pandas",
     "numpy",
@@ -83,7 +83,7 @@ lint.ignore = [
     "ISC001", # https://docs.astral.sh/ruff/rules/single-line-implicit-string-concatenation/
 ]
 
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint.pydocstyle] # https://docs.astral.sh/ruff/settings/#lint_pydocstyle_convention
 convention = "google"

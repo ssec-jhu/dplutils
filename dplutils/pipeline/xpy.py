@@ -95,7 +95,7 @@ class XPyStreamExecutor(StreamingGraphExecutor):
             task=task, submitted_task_info=task_info, input_files=disk_input_files, output_files=bundle.output_files
         )
 
-    def split_batch_submit(self, batch: StreamBatch, max_rows: int):
+    def split_batch_submit(self, task: PipelineTask, batch: StreamBatch, max_rows: int):
         num_splits = calculate_splits(batch.length, max_rows)
         output_files = self.stager.get("split", num=num_splits)
         bundle = XPyRemoteBundle(

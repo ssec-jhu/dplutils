@@ -162,7 +162,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         all pending tasks for ray_poll_timeout seconds. The timeout gives
         opportunity to re-evaluate cluster resources in case it has expanded
         since last scheduling loop
-      \*args, \*\*kwargs: These are passed to
+      \\*args, \\*\\*kwargs: These are passed to
         :py:class:`StreamingGraphexecutor<dplutils.pipeline.stream.StreamingGraphExecutor>`
     """
 
@@ -171,6 +171,7 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         self.ray_poll_timeout = ray_poll_timeout
         self.remote_splitter = ray.remote(stream_split_func)
         self.sched_resources = defaultdict(float)
+        self.warned_oversized = {}
 
     def _setup_remote_tasks(self):
         # bootstrap remote tasks prior to execution and keep reference - this is
@@ -196,6 +197,21 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
             batch.data = ray.get(batch.data)
             yield batch
 
+    def warn_oversized(self, task, resource, requested, capacity):
+        # A request the cluster cannot satisfy in total will never be scheduled
+        # (or, if overcommitted, will queue in ray indefinitely), which is
+        # otherwise silent. The submittable check runs every scheduling loop, so
+        # warn only once per task resource, repeating only if the capacity
+        # changes - the condition may be resolved by an expanding cluster.
+        key = (task.name, resource)
+        if self.warned_oversized.get(key) == capacity:
+            return
+        self.warned_oversized[key] = capacity
+        self.logger.warning(
+            f"Task <{task.name}> requests {resource}={requested} but cluster has {capacity} in total, "
+            "it cannot be scheduled unless the cluster grows"
+        )
+
     def task_submittable(self, task, rank):
         cluster_r = ray.cluster_resources()
         ck_map = {"num_cpus": "CPU", "num_gpus": "GPU"}
@@ -208,22 +224,33 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
             # will be specified as zero to override a default
             if task_r[k] <= 0:
                 continue
-            avail = cluster_r.get(ck_map.get(k, k), 0) - self.sched_resources.get(k, 0)
+            capacity = cluster_r.get(ck_map.get(k, k), 0)
+            if task_r[k] > capacity:
+                self.warn_oversized(task, k, task_r[k], capacity)
+            # Cannot schedule tasks that request a resource we do not have
+            if ck_map.get(k, k) not in cluster_r:
+                return False
+            avail = capacity - self.sched_resources.get(k, 0)
             # Overcommit the resources for all downstream tasks to ensure that
-            # upstream tasks cant starve those that don't presently fit. Source
-            # only overcommits if there is nothing downstream since the system
-            # can be considered starved
-            if task in self.graph.source_tasks and rank > 0 and task_r[k] > avail:
+            # upstream tasks cant starve those that don't presently fit. Sources
+            # never overcommit: an extra input submission cannot do anything but
+            # queue ahead of work closer to the sink. Sources are instead kept
+            # from starving each other by the strict round-robin in which they
+            # are submitted.
+            if task in self.graph.source_tasks and task_r[k] > avail:
                 return False
             elif avail < 0:
                 return False
         self.logger.debug(f"Task <{task.name}> is submittable")
         return True
 
-    def task_submit(self, task, df_list):
-        remote_task = self.remote_task_map[task.name]
+    def _claim_resources(self, task):
         for r, v in task_resources(task).items():
             self.sched_resources[r] += v
+
+    def task_submit(self, task, df_list):
+        remote_task = self.remote_task_map[task.name]
+        self._claim_resources(task)
         refs = remote_task.remote(*df_list)
         return RemoteTracker(task, refs)
 
@@ -231,15 +258,20 @@ class RayStreamGraphExecutor(StreamingGraphExecutor):
         ready, _ = ray.wait(remote_task.refs, timeout=0, fetch_local=False)
         if len(ready) == 0:
             return False
-        if not remote_task.is_split:
-            for r, v in task_resources(remote_task.task).items():
-                self.sched_resources[r] -= v
+        for r, v in task_resources(remote_task.task).items():
+            self.sched_resources[r] -= v
         return True
 
-    def split_batch_submit(self, stream_batch, max_rows):
+    def split_batch_submit(self, task, stream_batch, max_rows):
         splits = int(np.ceil(stream_batch.length / max_rows))
+        # A split is charged the resources of the task it feeds, so that they
+        # are held across the (expected quick) split rather than claimed by an
+        # upstream task in the interim. The splitter itself runs with default
+        # resources - requesting them of ray would make the split queue behind
+        # the very task it is preparing input for.
+        self._claim_resources(task)
         refs = self.remote_splitter.options(num_returns=splits * 2).remote(stream_batch.data, splits)
-        return RemoteTracker(None, refs, True)
+        return RemoteTracker(task, refs, True)
 
     def task_resolve_output(self, remote_task):
         if remote_task.is_split:
